@@ -18,12 +18,14 @@ import {
   type Expense,
 } from "@/lib/expenses"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Supplies", "Marketing", "Salaries", "Shipping", "Equipment", "Other"]
 const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"]
 
 function ExpensesContent() {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([])
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -33,6 +35,7 @@ function ExpensesContent() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [formData, setFormData] = useState({
     name: "",
     category: "Other",
@@ -49,6 +52,7 @@ function ExpensesContent() {
     try {
       setLoading(true)
       const expensesList = await getExpenses()
+      setAllExpenses(expensesList)
       setExpenses(expensesList)
 
       const total = await getTotalExpenses()
@@ -87,9 +91,9 @@ function ExpensesContent() {
       }
 
       if (editingId) {
-        await updateExpense(editingId, expenseData, auth.currentUser?.uid || "system", auth.currentUser?.displayName || "System")
+        await updateExpense(editingId, expenseData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       } else {
-        await addExpense(expenseData, auth.currentUser?.uid || "system", auth.currentUser?.displayName || "System")
+        await addExpense(expenseData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
       setFormData({
@@ -125,12 +129,29 @@ function ExpensesContent() {
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm("Are you sure you want to delete this expense?")) {
       try {
-        await deleteExpense(id, auth.currentUser?.uid || "system", auth.currentUser?.displayName || "System", name)
+        await deleteExpense(id, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System", name)
         await fetchData()
       } catch (err: any) {
         setError("Failed to delete expense")
       }
     }
+  }
+
+  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDate, end: endDate })
+    
+    if (!startDate || !endDate) {
+      setExpenses(allExpenses)
+      return
+    }
+
+    const filtered = allExpenses.filter((expense) => {
+      const expenseDate = expense.createdAt?.toDate?.()
+      if (!expenseDate) return false
+      return expenseDate >= startDate && expenseDate <= endDate
+    })
+    
+    setExpenses(filtered)
   }
 
   const filteredExpenses = expenses.filter((expense) => {
@@ -159,11 +180,14 @@ function ExpensesContent() {
           <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Expense"}</Button>
         </div>
 
+        {/* Date Filter */}
+        <DateFilter onFilter={handleDateFilter} />
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Expenses</div>
-            <div className="text-3xl font-bold text-primary mt-2">${totalExpenses.toFixed(2)}</div>
+            <div className="text-3xl font-bold text-primary mt-2">RS {totalExpenses.toFixed(2)}</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Transactions</div>
@@ -183,7 +207,7 @@ function ExpensesContent() {
                 <label className="block text-sm font-medium mb-1">Expense Name *</label>
                 <Input
                   type="text"
-                  placeholder="e.g., Office Rent"
+                  placeholder={formData.name ? "" : "e.g., Office Rent"}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
@@ -205,13 +229,13 @@ function ExpensesContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Amount ($) *</label>
+                <label className="block text-sm font-medium mb-1">Amount (RS) *</label>
                 <Input
                   type="number"
-                  placeholder="0.00"
+                  placeholder={formData.amount > 0 ? "" : "0.00"}
                   step="0.01"
                   min="0"
-                  value={formData.amount}
+                  value={formData.amount || ""}
                   onChange={(e) => setFormData({ ...formData, amount: Number.parseFloat(e.target.value) || 0 })}
                   required
                 />
@@ -228,7 +252,7 @@ function ExpensesContent() {
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Description</label>
                 <textarea
-                  placeholder="Additional notes..."
+                  placeholder={formData.description ? "" : "Additional notes..."}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
@@ -291,7 +315,7 @@ function ExpensesContent() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, value }) => `${name}: $${value}`}
+                      label={({ name, value }) => `${name}: RS ${value}`}
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
@@ -344,7 +368,7 @@ function ExpensesContent() {
                   <tr className="border-b border-border">
                     <th className="text-left py-3 px-4">Expense</th>
                     <th className="text-left py-3 px-4">Category</th>
-                    <th className="text-left py-3 px-4">Date</th>
+                    <th className="text-left py-3 px-4">Date & Time</th>
                     <th className="text-right py-3 px-4">Amount</th>
                     <th className="text-left py-3 px-4">Description</th>
                     <th className="text-center py-3 px-4">Actions</th>
@@ -359,8 +383,13 @@ function ExpensesContent() {
                           {expense.category}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs">{expense.date?.toDate?.().toLocaleDateString()}</td>
-                      <td className="py-3 px-4 text-right font-semibold">${expense.amount.toFixed(2)}</td>
+                      <td className="py-3 px-4">
+                        <div className="text-xs text-muted-foreground">
+                          <div>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</div>
+                          <div className="text-[10px]">{expense.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold">RS {expense.amount.toFixed(2)}</td>
                       <td className="py-3 px-4 text-xs text-muted-foreground line-clamp-1">{expense.description}</td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex gap-1 justify-center">

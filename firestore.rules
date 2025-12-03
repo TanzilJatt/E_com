@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Items collection - authenticated users can read/write
+    match /items/{itemId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+    
+    // Sales collection - authenticated users can read/write
+    match /sales/{saleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+    
+    // Expenses collection - authenticated users only
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+    
+    // Activity logs - authenticated users can read/write
+    match /activityLogs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Logs should not be modified
+    }
+  }
+}
+

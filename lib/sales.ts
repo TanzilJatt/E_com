@@ -27,6 +27,9 @@ export async function createSale(
   userName: string,
 ): Promise<string | null> {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     // Validate sale type
     const totalQuantity = saleData.items.reduce((sum, item) => sum + item.quantity, 0)
 

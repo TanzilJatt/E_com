@@ -31,14 +31,25 @@ export async function addItem(
   userName: string,
 ): Promise<string | null> {
   try {
+    console.log("📝 addItem called with:", { name: itemData.name, sku: itemData.sku, userId })
+    
+    if (!db) {
+      console.error("❌ Database not available!")
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
+    
+    console.log("✓ Database is available, checking for duplicate SKU...")
     const existingSku = query(collection(db, "items"), where("sku", "==", itemData.sku.toUpperCase()))
     const docs = await getDocs(existingSku)
+    
     if (!docs.empty) {
+      console.warn("⚠️  SKU already exists:", itemData.sku)
       const error = new Error("SKU already exists")
       error.name = "DuplicateSKU"
       throw error
     }
 
+    console.log("✓ SKU is unique, adding item to Firestore...")
     const docRef = await addDoc(collection(db, "items"), {
       ...itemData,
       sku: itemData.sku.toUpperCase(),
@@ -48,11 +59,24 @@ export async function addItem(
       updatedBy: userId,
     })
 
+    console.log("✅ Item added successfully! Document ID:", docRef.id)
+    console.log("📍 Check Firebase Console: https://console.firebase.google.com/project/e-commerce-25134/firestore")
+    
     await logActivity("ITEM_ADDED", `Added new item: ${itemData.name}`, { itemId: docRef.id })
 
     return docRef.id
-  } catch (error) {
-    console.error("Error adding item:", error)
+  } catch (error: any) {
+    console.error("❌ Error adding item:", error)
+    console.error("Error code:", error?.code)
+    console.error("Error message:", error?.message)
+    
+    if (error?.code === "permission-denied" || error?.message?.includes("PERMISSION_DENIED")) {
+      console.error("\n🚨 PERMISSION DENIED - Firestore is not enabled or rules are blocking!")
+      console.error("   Solution:")
+      console.error("   1. Enable Firestore: https://console.firebase.google.com/project/e-commerce-25134/firestore")
+      console.error("   2. Or check security rules")
+    }
+    
     throw error
   }
 }
@@ -63,6 +87,9 @@ export async function updateItem(
   userId: string,
 ): Promise<void> {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     const itemRef = doc(db, "items", itemId)
     await updateDoc(itemRef, {
       ...updates,
@@ -82,6 +109,9 @@ export async function updateItem(
 
 export async function deleteItem(itemId: string): Promise<void> {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     await deleteDoc(doc(db, "items", itemId))
     await logActivity("ITEM_DELETED", `Deleted item with ID: ${itemId}`, { itemId })
   } catch (error) {
@@ -92,6 +122,10 @@ export async function deleteItem(itemId: string): Promise<void> {
 
 export async function getItems(): Promise<Item[]> {
   try {
+    if (!db) {
+      console.error("[v0] Database is not available")
+      return []
+    }
     console.log("[v0] Firebase getItems() called")
     console.log("[v0] Firebase db object exists:", !!db)
     console.log("[v0] Firebase db type:", typeof db)

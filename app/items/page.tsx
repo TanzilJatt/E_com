@@ -10,9 +10,11 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 function ItemsContent() {
   const [items, setItems] = useState<Item[]>([])
+  const [allItems, setAllItems] = useState<Item[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -26,6 +28,7 @@ function ItemsContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
   useEffect(() => {
     fetchItems()
@@ -34,7 +37,13 @@ function ItemsContent() {
   const fetchItems = async () => {
     try {
       setLoading(true)
+      if (!db) {
+        setError("Database is not available. Please check your Firebase configuration and restart the dev server.")
+        setLoading(false)
+        return
+      }
       console.log("[v0] Fetching items from Firebase...")
+      console.log("[v0] DB object:", db)
       const snapshot = await getDocs(collection(db, "items"))
       const itemsList = snapshot.docs.map(
         (doc) =>
@@ -44,6 +53,7 @@ function ItemsContent() {
           }) as Item,
       )
       console.log("[v0] Fetched items:", itemsList.length)
+      setAllItems(itemsList)
       setItems(itemsList)
       setError("")
     } catch (error) {
@@ -54,8 +64,25 @@ function ItemsContent() {
     }
   }
 
+  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDate, end: endDate })
+    
+    if (!startDate || !endDate) {
+      setItems(allItems)
+      return
+    }
+
+    const filtered = allItems.filter((item) => {
+      const itemDate = item.createdAt?.toDate?.()
+      if (!itemDate) return false
+      return itemDate >= startDate && itemDate <= endDate
+    })
+    
+    setItems(filtered)
+  }
+
   const skuExists = (sku: string, excludeId?: string) => {
-    return items.some((item) => item.sku.toUpperCase() === sku.toUpperCase() && item.id !== excludeId)
+    return allItems.some((item) => item.sku.toUpperCase() === sku.toUpperCase() && item.id !== excludeId)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,9 +104,9 @@ function ItemsContent() {
       }
 
       if (editingId) {
-        await updateItem(editingId, formData, auth.currentUser?.uid || "system")
+        await updateItem(editingId, formData, auth?.currentUser?.uid || "system")
       } else {
-        await addItem(formData, auth.currentUser?.uid || "system", auth.currentUser?.displayName || "System")
+        await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
       setFormData({ name: "", price: 0, quantity: 0, sku: "", description: "" })
@@ -150,7 +177,7 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Item Name *</label>
                 <Input
                   type="text"
-                  placeholder="Product name"
+                  placeholder={formData.name ? "" : "Product name"}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
@@ -160,7 +187,7 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">SKU *</label>
                 <Input
                   type="text"
-                  placeholder="SKU-001"
+                  placeholder={formData.sku ? "" : "SKU-001"}
                   value={formData.sku}
                   onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
                   required
@@ -170,13 +197,13 @@ function ItemsContent() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Price ($) *</label>
+                <label className="block text-sm font-medium mb-1">Price (RS) *</label>
                 <Input
                   type="number"
-                  placeholder="0.00"
+                  placeholder={formData.price > 0 ? "" : "0.00"}
                   step="0.01"
                   min="0"
-                  value={formData.price}
+                  value={formData.price || ""}
                   onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) || 0 })}
                   required
                 />
@@ -185,9 +212,9 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
                 <Input
                   type="number"
-                  placeholder="0"
+                  placeholder={formData.quantity > 0 ? "" : "0"}
                   min="0"
-                  value={formData.quantity}
+                  value={formData.quantity || ""}
                   onChange={(e) => setFormData({ ...formData, quantity: Number.parseInt(e.target.value) || 0 })}
                   required
                 />
@@ -195,7 +222,7 @@ function ItemsContent() {
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Description</label>
                 <textarea
-                  placeholder="Item description"
+                  placeholder={formData.description ? "" : "Item description"}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
@@ -226,6 +253,9 @@ function ItemsContent() {
           </Card>
         )}
 
+        {/* Date Filter */}
+        <DateFilter onFilter={handleDateFilter} />
+
         {/* Search */}
         <div className="mb-6">
           <Input
@@ -237,62 +267,123 @@ function ItemsContent() {
           />
         </div>
 
-        {/* Items Grid */}
+        {/* Items Table */}
         {loading ? (
           <Card className="p-12 text-center">
             <p className="text-muted-foreground">Loading items...</p>
           </Card>
+        ) : filteredItems.length === 0 ? (
+          <Card className="p-12 text-center">
+            <p className="text-muted-foreground">
+              {items.length === 0
+                ? "No items found. Start by adding your first item!"
+                : "No items match your search."}
+            </p>
+          </Card>
         ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredItems.map((item) => (
-                <Card key={item.id} className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-semibold text-foreground">{item.name}</h3>
-                      <p className="text-sm text-muted-foreground">SKU: {item.sku}</p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" onClick={() => handleEdit(item)}>
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-red-600 bg-transparent"
-                        onClick={() => handleDelete(item.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Price:</span>
-                      <span className="font-semibold">${item.price.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Quantity:</span>
-                      <span className="font-semibold">{item.quantity} units</span>
-                    </div>
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted/50">
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-4 font-semibold text-sm">SKU</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm">Total Value</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Last Updated</th>
+                    <th className="text-center py-3 px-4 font-semibold text-sm">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, index) => (
+                    <tr 
+                      key={item.id} 
+                      className={`border-b border-border hover:bg-muted/30 transition-colors ${
+                        index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                      }`}
+                    >
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-sm font-medium">{item.sku}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-medium">{item.name}</span>
+                      </td>
+                      <td className="py-3 px-4 max-w-xs">
+                        <span className="text-sm text-muted-foreground line-clamp-2">
+                          {item.description || "No description"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="font-semibold">RS {item.price.toFixed(2)}</span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
+                          {item.quantity}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="font-semibold text-primary">
+                          RS {(item.price * item.quantity).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="text-xs text-muted-foreground">
+                          <div>{item.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
+                          <div className="text-[10px]">{item.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="text-xs text-muted-foreground">
+                          <div>{item.updatedAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
+                          <div className="text-[10px]">{item.updatedAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex gap-2 justify-center">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => handleEdit(item)}
+                            className="h-8"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950 h-8"
+                            onClick={() => handleDelete(item.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-muted/30 border-t-2 border-border">
+                  <tr>
+                    <td colSpan={3} className="py-3 px-4 font-semibold">
+                      Total ({filteredItems.length} items)
+                    </td>
+                    <td className="py-3 px-4 text-right font-semibold">
+                      RS {filteredItems.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-semibold">
+                      {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold text-primary text-lg">
+                      RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+                    </td>
+                    <td colSpan={3}></td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
-
-            {filteredItems.length === 0 && (
-              <Card className="p-12 text-center">
-                <p className="text-muted-foreground">
-                  {items.length === 0
-                    ? "No items found. Start by adding your first item!"
-                    : "No items match your search."}
-                </p>
-              </Card>
-            )}
-          </>
+          </Card>
         )}
       </main>
     </>

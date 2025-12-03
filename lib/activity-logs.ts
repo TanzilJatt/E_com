@@ -34,6 +34,7 @@ export interface ActivityLog {
 
 export async function logActivity(action: ActivityAction, details: string, metadata?: ActivityLog["metadata"]) {
   try {
+    if (!auth || !db) return
     const user = auth.currentUser
     if (!user) return
 
@@ -57,6 +58,10 @@ export async function getActivityLogs(filters?: {
   endDate?: Date
 }): Promise<ActivityLog[]> {
   try {
+    if (!db) {
+      console.error("Database is not available")
+      return []
+    }
     const constraints: QueryConstraint[] = [orderBy("timestamp", "desc")]
 
     if (filters?.userId) {

@@ -19,14 +19,17 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 function ReportsContent() {
   const [sales, setSales] = useState<any[]>([])
+  const [allSales, setAllSales] = useState<any[]>([])
   const [startDate, setStartDate] = useState(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   )
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
   const [filterType, setFilterType] = useState<"all" | "wholesale" | "retail">("all")
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
   useEffect(() => {
     fetchSales()
@@ -34,15 +37,37 @@ function ReportsContent() {
 
   const fetchSales = async () => {
     try {
+      if (!db) {
+        console.error("Database is not available. Please check your Firebase configuration.")
+        return
+      }
       const snapshot = await getDocs(query(collection(db, "sales"), orderBy("createdAt", "desc")))
       const salesList = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }))
+      setAllSales(salesList)
       setSales(salesList)
     } catch (error) {
       console.error("Error fetching sales:", error)
     }
+  }
+
+  const handleDateFilter = (startDateFilter: Date | null, endDateFilter: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDateFilter, end: endDateFilter })
+    
+    if (!startDateFilter || !endDateFilter) {
+      setSales(allSales)
+      return
+    }
+
+    const filtered = allSales.filter((sale) => {
+      const saleDate = sale.createdAt?.toDate?.()
+      if (!saleDate) return false
+      return saleDate >= startDateFilter && saleDate <= endDateFilter
+    })
+    
+    setSales(filtered)
   }
 
   const filteredSales = sales.filter((sale) => {
@@ -88,19 +113,14 @@ function ReportsContent() {
           <p className="text-muted-foreground mt-2">Analyze your sales performance</p>
         </div>
 
-        {/* Filters */}
-        <Card className="p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Start Date</label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">End Date</label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Sale Type</label>
+        {/* Date Filter */}
+        <DateFilter onFilter={handleDateFilter} />
+
+        {/* Additional Filters */}
+        <Card className="p-4 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium mb-2">Sale Type</label>
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as "all" | "wholesale" | "retail")}
@@ -111,11 +131,6 @@ function ReportsContent() {
                 <option value="wholesale">Wholesale Only</option>
               </select>
             </div>
-            <div className="flex items-end">
-              <Button onClick={fetchSales} className="w-full">
-                Apply Filters
-              </Button>
-            </div>
           </div>
         </Card>
 
@@ -123,7 +138,7 @@ function ReportsContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
-            <div className="text-3xl font-bold text-primary mt-2">${totalRevenue.toFixed(2)}</div>
+            <div className="text-3xl font-bold text-primary mt-2">RS {totalRevenue.toFixed(2)}</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Transactions</div>
@@ -131,7 +146,7 @@ function ReportsContent() {
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Avg Transaction</div>
-            <div className="text-3xl font-bold text-primary mt-2">${avgTransaction.toFixed(2)}</div>
+            <div className="text-3xl font-bold text-primary mt-2">RS {avgTransaction.toFixed(2)}</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Retail / Wholesale</div>
@@ -217,7 +232,7 @@ function ReportsContent() {
                     </td>
                     <td className="py-3 px-2">{sale.items?.length || 0}</td>
                     <td className="py-3 px-2 text-xs">{sale.userName || "Unknown"}</td>
-                    <td className="py-3 px-2 text-right font-semibold">${(sale.totalAmount || 0).toFixed(2)}</td>
+                    <td className="py-3 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>

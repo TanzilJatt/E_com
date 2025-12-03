@@ -20,6 +20,9 @@ export async function addExpense(
   userName: string,
 ) {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     const expenseRef = await addDoc(collection(db, "expenses"), {
       ...expenseData,
       userId,
@@ -43,6 +46,9 @@ export async function updateExpense(
   userName: string,
 ) {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     const expenseRef = doc(db, "expenses", expenseId)
     await updateDoc(expenseRef, expenseData)
 
@@ -57,6 +63,9 @@ export async function updateExpense(
 
 export async function deleteExpense(expenseId: string, userId: string, userName: string, expenseName: string) {
   try {
+    if (!db) {
+      throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+    }
     await deleteDoc(doc(db, "expenses", expenseId))
 
     await logActivity("DELETE_EXPENSE", `Deleted expense: ${expenseName}`, userId, userName)
@@ -70,6 +79,10 @@ export async function deleteExpense(expenseId: string, userId: string, userName:
 
 export async function getExpenses(): Promise<Expense[]> {
   try {
+    if (!db) {
+      console.error("Database is not available")
+      return []
+    }
     const snapshot = await getDocs(collection(db, "expenses"))
     return snapshot.docs
       .map((doc) => ({

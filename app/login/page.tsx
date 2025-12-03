@@ -25,6 +25,12 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
+      if (!auth) {
+        setError("Firebase authentication is not available. Please check your configuration.")
+        setIsLoading(false)
+        return
+      }
+
       if (isSignUp) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password)
         if (displayName) {

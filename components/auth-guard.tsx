@@ -12,6 +12,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
 
   useEffect(() => {
+    if (!auth) {
+      setIsLoading(false)
+      router.push("/login")
+      return
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
         router.push("/login")

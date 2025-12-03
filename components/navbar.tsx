@@ -115,11 +115,6 @@ export function Navbar() {
                 Activity
               </Button>
             </Link>
-            <Link href="/setup">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
-                Setup
-              </Button>
-            </Link>
             <Button onClick={handleLogout} variant="outline" size="sm" className="w-full justify-start bg-transparent">
               Logout
             </Button>

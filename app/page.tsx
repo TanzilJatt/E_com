@@ -23,6 +23,10 @@ function DashboardContent() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        if (!db) {
+          console.error("Database is not available. Please check your Firebase configuration.")
+          return
+        }
         // Get items
         const itemsSnapshot = await getDocs(collection(db, "items"))
         const items = itemsSnapshot.docs.map((d) => d.data())
@@ -95,7 +99,7 @@ function DashboardContent() {
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
-            <div className="text-3xl font-bold text-primary mt-2">${stats.totalRevenue.toFixed(2)}</div>
+            <div className="text-3xl font-bold text-primary mt-2">RS {stats.totalRevenue.toFixed(2)}</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Retail Sales</div>
@@ -170,7 +174,7 @@ function DashboardContent() {
                         </span>
                       </td>
                       <td className="py-2 px-2">{sale.items?.length || 0}</td>
-                      <td className="py-2 px-2 text-right font-semibold">${(sale.totalAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>

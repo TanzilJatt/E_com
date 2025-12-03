@@ -26,6 +26,10 @@ function SalesContent() {
 
   const fetchItems = async () => {
     try {
+      if (!db) {
+        console.error("Database is not available")
+        return
+      }
       const snapshot = await getDocs(collection(db, "items"))
       const itemsList = snapshot.docs
         .map(
@@ -129,8 +133,8 @@ function SalesContent() {
           userId: "",
           userName: "",
         },
-        auth.currentUser?.uid || "system",
-        auth.currentUser?.displayName || "System",
+        auth?.currentUser?.uid || "system",
+        auth?.currentUser?.displayName || "System",
       )
 
       if (saleId) {
@@ -199,7 +203,7 @@ function SalesContent() {
                     <option value="">Choose an item...</option>
                     {items.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} - ${item.price} ({item.quantity} available)
+                        {item.name} - RS {item.price} ({item.quantity} available)
                       </option>
                     ))}
                   </select>
@@ -233,7 +237,7 @@ function SalesContent() {
                       <div>
                         <p className="font-medium">{item.itemName}</p>
                         <p className="text-sm text-muted-foreground">
-                          {item.quantity} × ${item.pricePerUnit.toFixed(2)} = ${item.totalPrice.toFixed(2)}
+                          {item.quantity} × RS {item.pricePerUnit.toFixed(2)} = RS {item.totalPrice.toFixed(2)}
                         </p>
                       </div>
                       <Button
@@ -266,7 +270,7 @@ function SalesContent() {
                 </div>
                 <div className="border-t border-border pt-3 flex justify-between">
                   <span className="font-semibold">Total:</span>
-                  <span className="text-2xl font-bold text-primary">${totalAmount.toFixed(2)}</span>
+                  <span className="text-2xl font-bold text-primary">RS {totalAmount.toFixed(2)}</span>
                 </div>
               </div>
 
