@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 function DashboardContent() {
   const [stats, setStats] = useState({
@@ -19,6 +20,9 @@ function DashboardContent() {
   })
   const [recentSales, setRecentSales] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
+  const [allSales, setAllSales] = useState<any[]>([])
+  const [allItems, setAllItems] = useState<any[]>([])
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,38 +42,12 @@ function DashboardContent() {
           ...d.data(),
         }))
 
-        // Calculate stats
-        const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
-        const retailCount = sales.filter((s) => s.type === "retail").length
-        const wholesaleCount = sales.filter((s) => s.type === "wholesale").length
+        // Store all data for filtering
+        setAllSales(sales)
+        setAllItems(items)
 
-        setStats({
-          totalItems: items.length,
-          totalSales: sales.length,
-          totalRevenue,
-          retailSales: retailCount,
-          wholesaleSales: wholesaleCount,
-        })
-
-        setRecentSales(sales.slice(0, 5))
-
-        // Create chart data
-        const last7Days = Array.from({ length: 7 }, (_, i) => {
-          const date = new Date()
-          date.setDate(date.getDate() - i)
-          return date.toISOString().split("T")[0]
-        }).reverse()
-
-        const chartData = last7Days.map((date) => {
-          const daySales = sales.filter((s) => s.createdAt?.toDate?.()?.toISOString().split("T")[0] === date)
-          return {
-            date: new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
-            revenue: daySales.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
-            count: daySales.length,
-          }
-        })
-
-        setChartData(chartData)
+        // Calculate stats (will be filtered by date if filter is active)
+        updateStats(sales, items)
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
       }
@@ -77,6 +55,67 @@ function DashboardContent() {
 
     fetchData()
   }, [])
+
+  const updateStats = (sales: any[], items: any[]) => {
+    // Calculate stats
+    const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
+    const retailCount = sales.filter((s) => s.type === "retail").length
+    const wholesaleCount = sales.filter((s) => s.type === "wholesale").length
+
+    setStats({
+      totalItems: items.length,
+      totalSales: sales.length,
+      totalRevenue,
+      retailSales: retailCount,
+      wholesaleSales: wholesaleCount,
+    })
+
+    setRecentSales(sales.slice(0, 5))
+
+    // Create chart data
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date()
+      date.setDate(date.getDate() - i)
+      return date.toISOString().split("T")[0]
+    }).reverse()
+
+    const chartData = last7Days.map((date) => {
+      const daySales = sales.filter((s) => s.createdAt?.toDate?.()?.toISOString().split("T")[0] === date)
+      return {
+        date: new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
+        revenue: daySales.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
+        count: daySales.length,
+      }
+    })
+
+    setChartData(chartData)
+  }
+
+  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDate, end: endDate })
+    
+    if (!startDate || !endDate) {
+      // No filter, show all data
+      updateStats(allSales, allItems)
+      return
+    }
+
+    // Filter sales by date
+    const filteredSales = allSales.filter((sale) => {
+      const saleDate = sale.createdAt?.toDate?.()
+      if (!saleDate) return false
+      return saleDate >= startDate && saleDate <= endDate
+    })
+
+    // Filter items by date
+    const filteredItems = allItems.filter((item) => {
+      const itemDate = item.createdAt?.toDate?.()
+      if (!itemDate) return false
+      return itemDate >= startDate && itemDate <= endDate
+    })
+    
+    updateStats(filteredSales, filteredItems)
+  }
 
   return (
     <>
@@ -86,6 +125,9 @@ function DashboardContent() {
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-2">Welcome back! Here's your inventory overview.</p>
         </div>
+
+        {/* Date Filter */}
+        <DateFilter onFilter={handleDateFilter} />
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
