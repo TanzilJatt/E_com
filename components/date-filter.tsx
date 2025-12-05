@@ -127,7 +127,7 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
   return (
     <Card className="p-4 mb-6">
       <div className="space-y-4">
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium mb-2">Filter by Date</label>
             <select

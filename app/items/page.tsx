@@ -22,7 +22,6 @@ function ItemsContent() {
     name: "",
     price: 0,
     quantity: 0,
-    sku: "",
     description: "",
   })
   const [error, setError] = useState("")
@@ -81,23 +80,19 @@ function ItemsContent() {
     setItems(filtered)
   }
 
-  const skuExists = (sku: string, excludeId?: string) => {
-    return allItems.some((item) => item.sku.toUpperCase() === sku.toUpperCase() && item.id !== excludeId)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setIsSubmitting(true)
 
     try {
-      if (!formData.name || !formData.sku || formData.price < 0 || formData.quantity < 0) {
-        setError("Please fill in all required fields (Name, SKU, Price, Quantity)")
+      if (!formData.name || formData.price < 0 || formData.quantity < 0) {
+        setError("Please fill in all required fields (Name, Price, Quantity)")
         setIsSubmitting(false)
         return
       }
 
-      if (skuExists(formData.sku, editingId ?? undefined)) {
+      if (editingId && false) {
         setError(`SKU "${formData.sku}" already exists. Please use a different SKU.`)
         setIsSubmitting(false)
         return
@@ -109,18 +104,14 @@ function ItemsContent() {
         await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
-      setFormData({ name: "", price: 0, quantity: 0, sku: "", description: "" })
+      setFormData({ name: "", price: 0, quantity: 0, description: "" })
       setEditingId(null)
       setIsAdding(false)
       setError("")
       await fetchItems()
     } catch (err: any) {
       console.error("[v0] Error:", err.message)
-      if (err.name === "DuplicateSKU" || err.message?.includes("SKU already exists")) {
-        setError(`SKU "${formData.sku}" already exists in the database. Please use a different SKU.`)
-      } else {
-        setError(err.message || "Failed to save item")
-      }
+      setError(err.message || "Failed to save item")
     } finally {
       setIsSubmitting(false)
     }
@@ -131,7 +122,6 @@ function ItemsContent() {
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      sku: item.sku,
       description: item.description,
     })
     setEditingId(item.id)
@@ -183,19 +173,15 @@ function ItemsContent() {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">SKU *</label>
-                <Input
-                  type="text"
-                  placeholder={formData.sku ? "" : "SKU-001"}
-                  value={formData.sku}
-                  onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
-                  required
-                />
-                {formData.sku && skuExists(formData.sku, editingId ?? undefined) && (
-                  <p className="text-red-600 text-xs mt-1">This SKU already exists</p>
-                )}
-              </div>
+              {editingId && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">SKU</label>
+                  <div className="px-3 py-2 bg-muted text-muted-foreground rounded-lg border-2 border-border/60">
+                    {items.find(i => i.id === editingId)?.sku || "Auto-generated"}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">SKU is auto-generated and cannot be changed</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">Price (RS) *</label>
                 <Input
@@ -230,8 +216,9 @@ function ItemsContent() {
                 />
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
+             
               <div className="md:col-span-2 flex gap-2">
-                <Button type="submit" className="flex-1" disabled={skuExists(formData.sku, editingId ?? undefined) || isSubmitting}>
+                <Button type="submit" className="flex-1" disabled={isSubmitting}>
                   {isSubmitting ? "Saving..." : editingId ? "Update Item" : "Add Item"}
                 </Button>
                 <Button

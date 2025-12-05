@@ -25,34 +25,62 @@ export interface Item {
   updatedBy: string
 }
 
+async function generateNextSKU(): Promise<string> {
+  try {
+    if (!db) {
+      throw new Error("Database is not available")
+    }
+    
+    // Get all items to find the highest SKU number
+    const snapshot = await getDocs(collection(db, "items"))
+    let maxNumber = 0
+    
+    snapshot.docs.forEach((doc) => {
+      const data = doc.data()
+      if (data.sku) {
+        // Extract number from SKU format like "SKU-0001"
+        const match = data.sku.match(/SKU-(\d+)/)
+        if (match) {
+          const num = parseInt(match[1], 10)
+          if (num > maxNumber) {
+            maxNumber = num
+          }
+        }
+      }
+    })
+    
+    // Generate next SKU
+    const nextNumber = maxNumber + 1
+    const sku = `SKU-${nextNumber.toString().padStart(4, "0")}`
+    console.log("🔢 Generated SKU:", sku)
+    return sku
+  } catch (error) {
+    console.error("Error generating SKU:", error)
+    throw error
+  }
+}
+
 export async function addItem(
-  itemData: Omit<Item, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">,
+  itemData: Omit<Item, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "sku">,
   userId: string,
   userName: string,
 ): Promise<string | null> {
   try {
-    console.log("📝 addItem called with:", { name: itemData.name, sku: itemData.sku, userId })
+    console.log("📝 addItem called with:", { name: itemData.name, userId })
     
     if (!db) {
       console.error("❌ Database not available!")
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
     
-    console.log("✓ Database is available, checking for duplicate SKU...")
-    const existingSku = query(collection(db, "items"), where("sku", "==", itemData.sku.toUpperCase()))
-    const docs = await getDocs(existingSku)
-    
-    if (!docs.empty) {
-      console.warn("⚠️  SKU already exists:", itemData.sku)
-      const error = new Error("SKU already exists")
-      error.name = "DuplicateSKU"
-      throw error
-    }
+    // Auto-generate SKU
+    const sku = await generateNextSKU()
+    console.log("✓ Auto-generated SKU:", sku)
 
-    console.log("✓ SKU is unique, adding item to Firestore...")
+    console.log("✓ Adding item to Firestore...")
     const docRef = await addDoc(collection(db, "items"), {
       ...itemData,
-      sku: itemData.sku.toUpperCase(),
+      sku,
       createdAt: serverTimestamp(),
       createdBy: userId,
       updatedAt: serverTimestamp(),
@@ -62,7 +90,7 @@ export async function addItem(
     console.log("✅ Item added successfully! Document ID:", docRef.id)
     console.log("📍 Check Firebase Console: https://console.firebase.google.com/project/e-commerce-25134/firestore")
     
-    await logActivity("ITEM_ADDED", `Added new item: ${itemData.name}`, { itemId: docRef.id })
+    await logActivity("ITEM_ADDED", `Added new item: ${itemData.name} (${sku})`, { itemId: docRef.id })
 
     return docRef.id
   } catch (error: any) {
