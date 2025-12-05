@@ -7,21 +7,40 @@ import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createSale, type SaleItem } from "@/lib/sales"
+import { createSale, getSales, type SaleItem, type Sale } from "@/lib/sales"
 import type { Item } from "@/lib/items"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 function SalesContent() {
+  // View state
+  const [activeView, setActiveView] = useState<"record" | "list">("record")
+  
+  // Record Sale State
   const [items, setItems] = useState<Item[]>([])
   const [saleType, setSaleType] = useState<"wholesale" | "retail">("retail")
   const [cart, setCart] = useState<SaleItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState("")
   const [quantity, setQuantity] = useState(1)
+  const [cashPrice, setCashPrice] = useState<number | "">("")
+  const [creditPrice, setCreditPrice] = useState<number | "">("")
+  const [paymentCash, setPaymentCash] = useState(false)
+  const [paymentCredit, setPaymentCredit] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
+  // Sales List State
+  const [sales, setSales] = useState<Sale[]>([])
+  const [filteredSales, setFilteredSales] = useState<Sale[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "wholesale">("all")
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [loading, setLoading] = useState(false)
+
   useEffect(() => {
     fetchItems()
+    fetchSales()
   }, [])
 
   const fetchItems = async () => {
@@ -46,10 +65,75 @@ function SalesContent() {
     }
   }
 
+  const fetchSales = async () => {
+    try {
+      setLoading(true)
+      const salesList = await getSales()
+      setSales(salesList)
+      setFilteredSales(salesList)
+    } catch (error) {
+      console.error("Error fetching sales:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filter sales whenever filters change
+  useEffect(() => {
+    let filtered = [...sales]
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter((sale) =>
+        sale.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        sale.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        sale.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+    }
+
+    // Sale type filter
+    if (saleTypeFilter !== "all") {
+      filtered = filtered.filter((sale) => sale.type === saleTypeFilter)
+    }
+
+    // Payment method filter
+    if (paymentMethodFilter !== "all") {
+      filtered = filtered.filter((sale) => {
+        // Skip sales without payment method data
+        if (!sale.paymentMethod) return false
+        
+        if (paymentMethodFilter === "both") {
+          return sale.paymentMethod.cash && sale.paymentMethod.credit
+        } else if (paymentMethodFilter === "cash") {
+          return sale.paymentMethod.cash && !sale.paymentMethod.credit
+        } else if (paymentMethodFilter === "credit") {
+          return sale.paymentMethod.credit && !sale.paymentMethod.cash
+        }
+        return true
+      })
+    }
+
+    // Date filter
+    if (dateFilter.start && dateFilter.end) {
+      filtered = filtered.filter((sale) => {
+        const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
+        return saleDate >= dateFilter.start! && saleDate <= dateFilter.end!
+      })
+    }
+
+    setFilteredSales(filtered)
+  }, [sales, searchTerm, saleTypeFilter, paymentMethodFilter, dateFilter])
+
   const handleAddToCart = () => {
     setError("")
     if (!selectedItemId || quantity <= 0) {
       setError("Please select an item and enter a valid quantity")
+      return
+    }
+
+    // Validate that at least one price is entered
+    if (cashPrice === "" && creditPrice === "") {
+      setError("Please enter at least one price (Cash or Credit)")
       return
     }
 
@@ -64,23 +148,30 @@ function SalesContent() {
       return
     }
 
+    // Use default price if neither custom price is set
+    const effectiveCashPrice = cashPrice !== "" ? cashPrice : item.price
+    const effectiveCreditPrice = creditPrice !== "" ? creditPrice : item.price
+    
+    // Determine which price to use for totalPrice based on what's entered
+    let totalPrice = 0
+    if (cashPrice !== "" && creditPrice !== "") {
+      // Both prices entered - use average for display, will be split later
+      totalPrice = quantity * ((effectiveCashPrice + effectiveCreditPrice) / 2)
+    } else if (cashPrice !== "") {
+      totalPrice = quantity * effectiveCashPrice
+    } else {
+      totalPrice = quantity * effectiveCreditPrice
+    }
+    
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
       if (existingItem.quantity + quantity > item.quantity) {
         setError("Not enough stock available")
         return
       }
-      setCart(
-        cart.map((c) =>
-          c.itemId === selectedItemId
-            ? {
-              ...c,
-              quantity: c.quantity + quantity,
-              totalPrice: (c.quantity + quantity) * c.pricePerUnit,
-            }
-            : c,
-        ),
-      )
+      // For simplicity, replace the existing item with new pricing
+      setError("Item already in cart. Please remove it first to change pricing.")
+      return
     } else {
       setCart([
         ...cart,
@@ -89,17 +180,34 @@ function SalesContent() {
           itemName: item.name,
           quantity,
           pricePerUnit: item.price,
-          totalPrice: quantity * item.price,
+          cashPrice: cashPrice !== "" ? cashPrice : undefined,
+          creditPrice: creditPrice !== "" ? creditPrice : undefined,
+          totalPrice,
         },
       ])
     }
 
     setSelectedItemId("")
     setQuantity(1)
+    setCashPrice("")
+    setCreditPrice("")
+    
+    // Auto-select payment methods based on prices in cart
+    const hasCash = cashPrice !== "" || cart.some(c => c.cashPrice !== undefined)
+    const hasCredit = creditPrice !== "" || cart.some(c => c.creditPrice !== undefined)
+    if (hasCash) setPaymentCash(true)
+    if (hasCredit) setPaymentCredit(true)
   }
 
   const handleRemoveFromCart = (itemId: string) => {
-    setCart(cart.filter((c) => c.itemId !== itemId))
+    const newCart = cart.filter((c) => c.itemId !== itemId)
+    setCart(newCart)
+    
+    // Update payment method selections based on remaining items
+    const hasCash = newCart.some(c => c.cashPrice !== undefined)
+    const hasCredit = newCart.some(c => c.creditPrice !== undefined)
+    setPaymentCash(hasCash)
+    setPaymentCredit(hasCredit)
   }
 
   const handleCompleteSale = async () => {
@@ -121,15 +229,55 @@ function SalesContent() {
       return
     }
 
+    // Validate payment method matches entered prices
+    if (!paymentCash && !paymentCredit) {
+      setError("Please select at least one payment method")
+      return
+    }
+
+    // Validate payment selection matches available prices
+    if (paymentCash && cashTotal === 0) {
+      setError("No cash prices entered. Please enter cash prices for items or uncheck Cash payment.")
+      return
+    }
+    
+    if (paymentCredit && creditTotal === 0) {
+      setError("No credit prices entered. Please enter credit prices for items or uncheck Credit payment.")
+      return
+    }
+    
+    // Calculate final amounts based on payment selection
+    let finalCashAmount = 0
+    let finalCreditAmount = 0
+    
+    if (paymentCash && !paymentCredit) {
+      // Cash only - use all cash prices
+      finalCashAmount = cashTotal
+    } else if (paymentCredit && !paymentCash) {
+      // Credit only - use all credit prices
+      finalCreditAmount = creditTotal
+    } else if (paymentCash && paymentCredit) {
+      // Both selected - use both totals
+      finalCashAmount = cashTotal
+      finalCreditAmount = creditTotal
+    }
+    
+    const totalAmount = finalCashAmount + finalCreditAmount
+
     setIsLoading(true)
 
     try {
-      const totalAmount = cart.reduce((sum, item) => sum + item.totalPrice, 0)
       const saleId = await createSale(
         {
           type: saleType,
           items: cart,
           totalAmount,
+          paymentMethod: {
+            cash: paymentCash,
+            credit: paymentCredit,
+            cashAmount: finalCashAmount,
+            creditAmount: finalCreditAmount,
+          },
           userId: "",
           userName: "",
         },
@@ -142,7 +290,12 @@ function SalesContent() {
         setCart([])
         setSelectedItemId("")
         setQuantity(1)
+        setCashPrice("")
+        setCreditPrice("")
+        setPaymentCash(false)
+        setPaymentCredit(false)
         fetchItems()
+        fetchSales() // Refresh sales list
       }
     } catch (err: any) {
       setError(err.message)
@@ -152,16 +305,59 @@ function SalesContent() {
   }
 
   const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0)
-  const totalAmount = cart.reduce((sum, item) => sum + item.totalPrice, 0)
+  
+  // Calculate totals based on payment method selection
+  const calculateTotals = () => {
+    let cashTotal = 0
+    let creditTotal = 0
+    
+    cart.forEach(item => {
+      if (item.cashPrice !== undefined) {
+        cashTotal += item.cashPrice * item.quantity
+      }
+      if (item.creditPrice !== undefined) {
+        creditTotal += item.creditPrice * item.quantity
+      }
+    })
+    
+    return { cashTotal, creditTotal, grandTotal: cashTotal + creditTotal }
+  }
+  
+  const { cashTotal, creditTotal, grandTotal } = calculateTotals()
+  const totalAmount = grandTotal
+
+  const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
+    setDateFilter({ start, end })
+  }
 
   return (
     <>
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Record Sale</h1>
-          <p className="text-muted-foreground mt-2">Create a new sale transaction</p>
+          <h1 className="text-3xl font-bold text-foreground">Sales Management</h1>
+          <p className="text-muted-foreground mt-2">Record and view sales transactions</p>
         </div>
+
+        {/* View Toggle */}
+        <div className="mb-6 flex gap-2">
+          <Button
+            onClick={() => setActiveView("record")}
+            variant={activeView === "record" ? "default" : "outline"}
+          >
+            Record Sale
+          </Button>
+          <Button
+            onClick={() => setActiveView("list")}
+            variant={activeView === "list" ? "default" : "outline"}
+          >
+            View All Sales
+          </Button>
+        </div>
+
+        {/* Record Sale View */}
+        {activeView === "record" && (
+          <div>
 
         {/* Sale Type Selector */}
         <Card className="p-6 mb-8">
@@ -198,7 +394,7 @@ function SalesContent() {
                   <select
                     value={selectedItemId}
                     onChange={(e) => setSelectedItemId(e.target.value)}
-                    className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
+                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
                   >
                     <option value="">Choose an item...</option>
                     {items.map((item) => (
@@ -217,6 +413,43 @@ function SalesContent() {
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
                   />
                 </div>
+                
+                <div className="p-4 rounded-lg space-y-3">
+                  <p className="text-sm font-semibold">Price Entry Options</p>
+                  <p className="text-xs text-muted-foreground">
+                    Enter one or both prices. You may choose Cash Price, Credit Price, or both if applicable.
+                  </p>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Cash Price {cashPrice === "" && creditPrice === "" && <span className="text-red-500">*</span>}
+                    </label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={selectedItemId ? `Default: RS ${items.find(i => i.id === selectedItemId)?.price || 0}` : "Enter cash price"}
+                      value={cashPrice}
+                      onChange={(e) => setCashPrice(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                    />
+                    {/* <p className="text-xs text-muted-foreground mt-1">Enter the price if paid in cash</p> */}
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Credit Price {cashPrice === "" && creditPrice === "" && <span className="text-red-500">*</span>}
+                    </label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={selectedItemId ? `Default: RS ${items.find(i => i.id === selectedItemId)?.price || 0}` : "Enter credit price"}
+                      value={creditPrice}
+                      onChange={(e) => setCreditPrice(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                    />
+                    {/* <p className="text-xs text-muted-foreground mt-1">Enter the price if paid on credit</p> */}
+                  </div>
+                </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}
                 {success && <div className="text-green-600 text-sm">{success}</div>}
                 <Button onClick={handleAddToCart} className="w-full">
@@ -233,12 +466,22 @@ function SalesContent() {
               ) : (
                 <div className="space-y-3">
                   {cart.map((item) => (
-                    <div key={item.itemId} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <div>
+                    <div key={item.itemId} className="flex justify-between items-center p-3 rounded-lg">
+                      <div className="flex-1">
                         <p className="font-medium">{item.itemName}</p>
                         <p className="text-sm text-muted-foreground">
-                          {item.quantity} × RS {item.pricePerUnit.toFixed(2)} = RS {item.totalPrice.toFixed(2)}
+                          Quantity: {item.quantity}
                         </p>
+                        {item.cashPrice !== undefined && (
+                          <p className="text-xs text-green-600 dark:text-green-400">
+                            Cash: RS {item.cashPrice.toFixed(2)} × {item.quantity} = RS {(item.cashPrice * item.quantity).toFixed(2)}
+                          </p>
+                        )}
+                        {item.creditPrice !== undefined && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400">
+                            Credit: RS {item.creditPrice.toFixed(2)} × {item.quantity} = RS {(item.creditPrice * item.quantity).toFixed(2)}
+                          </p>
+                        )}
                       </div>
                       <Button
                         size="sm"
@@ -268,10 +511,62 @@ function SalesContent() {
                   <span className="text-muted-foreground">Total Quantity:</span>
                   <span className="font-semibold">{totalQuantity}</span>
                 </div>
+                {cashTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-600 dark:text-green-400">Cash Total:</span>
+                    <span className="font-semibold text-green-600 dark:text-green-400">RS {cashTotal.toFixed(2)}</span>
+                  </div>
+                )}
+                {creditTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600 dark:text-blue-400">Credit Total:</span>
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">RS {creditTotal.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="border-t border-border pt-3 flex justify-between">
-                  <span className="font-semibold">Total:</span>
-                  <span className="text-2xl font-bold text-primary">RS {totalAmount.toFixed(2)}</span>
+                  <span className="font-semibold">Grand Total:</span>
+                  <span className="text-2xl font-bold text-primary">RS {grandTotal.toFixed(2)}</span>
                 </div>
+              </div>
+
+              {/* Payment Method Selection */}
+              <div className="mb-6 p-4 rounded-lg">
+                <h3 className="text-sm font-semibold mb-3">Payment Method</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Select the payment method(s) used for this sale
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={paymentCash}
+                      onChange={(e) => setPaymentCash(e.target.checked)}
+                      disabled={cashTotal === 0}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">
+                      Cash {cashTotal > 0 && `(RS ${cashTotal.toFixed(2)})`}
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={paymentCredit}
+                      onChange={(e) => setPaymentCredit(e.target.checked)}
+                      disabled={creditTotal === 0}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">
+                      Credit {creditTotal > 0 && `(RS ${creditTotal.toFixed(2)})`}
+                    </span>
+                  </label>
+                </div>
+                
+                {cashTotal === 0 && creditTotal === 0 && (
+                  <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-3">
+                    Add items with prices to see payment options
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2 mb-4 text-xs text-muted-foreground">
@@ -291,6 +586,164 @@ function SalesContent() {
             </Card>
           </div>
         </div>
+        </div>
+        )}
+
+        {/* Sales List View */}
+        {activeView === "list" && (
+          <div className="space-y-6">
+            {/* Date Filter */}
+            <DateFilter onFilter={handleDateFilter} />
+
+            {/* Filters */}
+            <Card className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Search */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Search</label>
+                  <Input
+                    type="text"
+                    placeholder="Search by ID, user, or item..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {/* Sale Type Filter */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Sale Type</label>
+                  <select
+                    value={saleTypeFilter}
+                    onChange={(e) => setSaleTypeFilter(e.target.value as any)}
+                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="retail">Retail</option>
+                    <option value="wholesale">Wholesale</option>
+                  </select>
+                </div>
+
+                {/* Payment Method Filter */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Payment Method</label>
+                  <select
+                    value={paymentMethodFilter}
+                    onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
+                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                  >
+                    <option value="all">All Methods</option>
+                    <option value="cash">Cash Only</option>
+                    <option value="credit">Credit Only</option>
+                    <option value="both">Both (Cash + Credit)</option>
+                  </select>
+                </div>
+              </div>
+            </Card>
+
+            {/* Sales List */}
+            <Card className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Sales List</h2>
+                <div className="text-sm text-muted-foreground">
+                  Showing {filteredSales.length} of {sales.length} sales
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading sales...</div>
+              ) : filteredSales.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No sales found</div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredSales.map((sale) => (
+                    <div key={sale.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex flex-wrap justify-between items-start gap-4 mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold">#{sale.id.slice(0, 8)}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              sale.type === "wholesale" 
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                                : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            }`}>
+                              {sale.type.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {sale.transactionDate?.toDate ? 
+                              new Date(sale.transactionDate.toDate()).toLocaleString() :
+                              new Date(sale.transactionDate).toLocaleString()
+                            }
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            By: {sale.userName || "Unknown"}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-primary">
+                            RS {sale.totalAmount.toFixed(2)}
+                          </div>
+                          <div className="text-sm">
+                            {sale.paymentMethod ? (
+                              sale.paymentMethod.cash && sale.paymentMethod.credit ? (
+                                <div className="space-y-1">
+                                  <div className="text-green-600 dark:text-green-400">
+                                    Cash: RS {(sale.paymentMethod.cashAmount || 0).toFixed(2)}
+                                  </div>
+                                  <div className="text-blue-600 dark:text-blue-400">
+                                    Credit: RS {(sale.paymentMethod.creditAmount || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              ) : sale.paymentMethod.cash ? (
+                                <div className="text-green-600 dark:text-green-400">Cash Payment</div>
+                              ) : (
+                                <div className="text-blue-600 dark:text-blue-400">Credit Payment</div>
+                              )
+                            ) : (
+                              <div className="text-muted-foreground">No payment info</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Items */}
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-sm font-medium mb-2">Items:</div>
+                        <div className="space-y-1">
+                          {sale.items.map((item, idx) => (
+                            <div key={idx} className="text-sm text-muted-foreground flex justify-between">
+                              <span>
+                                {item.itemName} × {item.quantity}
+                              </span>
+                              <span className="flex gap-2">
+                                {item.cashPrice !== undefined && (
+                                  <span className="text-green-600 dark:text-green-400">
+                                    Cash: RS {item.cashPrice.toFixed(2)}
+                                  </span>
+                                )}
+                                {item.creditPrice !== undefined && (
+                                  <span className="text-blue-600 dark:text-blue-400">
+                                    Credit: RS {item.creditPrice.toFixed(2)}
+                                  </span>
+                                )}
+                                {item.cashPrice === undefined && item.creditPrice === undefined && (
+                                  <span>RS {item.pricePerUnit.toFixed(2)}</span>
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-sm font-medium mt-2">
+                          Total Items: {sale.items.reduce((sum, item) => sum + item.quantity, 0)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
       </main>
     </>
   )

@@ -9,8 +9,6 @@ import {
   query,
   where,
   serverTimestamp,
-  orderBy,
-  limit,
 } from "firebase/firestore"
 import { logActivity } from "./activity-logs"
 
@@ -25,50 +23,6 @@ export interface Item {
   createdBy: string
   updatedAt: any
   updatedBy: string
-}
-
-/**
- * Generates a unique SKU in the format: SKU-YYYY-NNNN
- * where YYYY is the current year and NNNN is a sequential number
- */
-export async function generateSKU(): Promise<string> {
-  try {
-    if (!db) {
-      throw new Error("Database is not available")
-    }
-
-    const currentYear = new Date().getFullYear()
-    const prefix = `SKU-${currentYear}-`
-
-    // Get all items with SKUs starting with current year prefix
-    const q = query(
-      collection(db, "items"),
-      where("sku", ">=", prefix),
-      where("sku", "<", `SKU-${currentYear + 1}-`),
-      orderBy("sku", "desc"),
-      limit(1)
-    )
-    
-    const snapshot = await getDocs(q)
-    
-    if (snapshot.empty) {
-      // First SKU for this year
-      return `${prefix}0001`
-    }
-
-    // Extract the number from the last SKU and increment
-    const lastSKU = snapshot.docs[0].data().sku as string
-    const lastNumber = parseInt(lastSKU.split("-")[2] || "0")
-    const nextNumber = lastNumber + 1
-
-    // Pad with zeros to ensure 4 digits
-    return `${prefix}${nextNumber.toString().padStart(4, "0")}`
-  } catch (error) {
-    console.error("Error generating SKU:", error)
-    // Fallback to timestamp-based SKU if something goes wrong
-    const timestamp = Date.now().toString().slice(-6)
-    return `SKU-${new Date().getFullYear()}-${timestamp}`
-  }
 }
 
 export async function addItem(

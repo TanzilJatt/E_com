@@ -1,6 +1,6 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { auth } from "@/lib/firebase"
 import { signOut } from "firebase/auth"
 import { useState } from "react"
@@ -9,7 +9,15 @@ import { Button } from "@/components/ui/button"
 
 export function Navbar() {
   const router = useRouter()
+  const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+
+  const isActive = (path: string) => {
+    if (path === "/") {
+      return pathname === "/"
+    }
+    return pathname?.startsWith(path)
+  }
 
   const handleLogout = async () => {
     try {
@@ -35,32 +43,56 @@ export function Navbar() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex gap-1">
             <Link href="/">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Dashboard
               </Button>
             </Link>
             <Link href="/items">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/items") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/items") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Items
               </Button>
             </Link>
             <Link href="/sales">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/sales") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/sales") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Sales
               </Button>
             </Link>
             <Link href="/expenses">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/expenses") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/expenses") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Expenses
               </Button>
             </Link>
             <Link href="/reports">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/reports") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/reports") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Reports
               </Button>
             </Link>
             <Link href="/logs">
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant={isActive("/logs") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/logs") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
                 Activity
               </Button>
             </Link>
@@ -86,32 +118,56 @@ export function Navbar() {
         {isOpen && (
           <div className="md:hidden pb-4 space-y-2">
             <Link href="/">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Dashboard
               </Button>
             </Link>
             <Link href="/items">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/items") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/items") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Items
               </Button>
             </Link>
             <Link href="/sales">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/sales") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/sales") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Sales
               </Button>
             </Link>
             <Link href="/expenses">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/expenses") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/expenses") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Expenses
               </Button>
             </Link>
             <Link href="/reports">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/reports") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/reports") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Reports
               </Button>
             </Link>
             <Link href="/logs">
-              <Button variant="ghost" size="sm" className="w-full justify-start">
+              <Button 
+                variant={isActive("/logs") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/logs") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
                 Activity
               </Button>
             </Link>

@@ -9,7 +9,7 @@ import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { addItem, updateItem, deleteItem, generateSKU, type Item } from "@/lib/items"
+import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
 
 function ItemsContent() {
@@ -85,37 +85,20 @@ function ItemsContent() {
     return allItems.some((item) => item.sku.toUpperCase() === sku.toUpperCase() && item.id !== excludeId)
   }
 
-  const handleGenerateSKU = async () => {
-    try {
-      const newSKU = await generateSKU()
-      setFormData({ ...formData, sku: newSKU })
-      setError("")
-    } catch (err: any) {
-      setError("Failed to generate SKU: " + err.message)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setIsSubmitting(true)
 
     try {
-      // Auto-generate SKU if somehow it's missing
-      if (!formData.sku && !editingId) {
-        const newSKU = await generateSKU()
-        setFormData({ ...formData, sku: newSKU })
-      }
-
       if (!formData.name || !formData.sku || formData.price < 0 || formData.quantity < 0) {
-        setError("Please fill in all required fields (Name, Price, Quantity)")
+        setError("Please fill in all required fields (Name, SKU, Price, Quantity)")
         setIsSubmitting(false)
         return
       }
 
-      // Safety check for duplicate SKUs (shouldn't happen with auto-generation)
       if (skuExists(formData.sku, editingId ?? undefined)) {
-        setError(`SKU conflict detected. Please regenerate the SKU.`)
+        setError(`SKU "${formData.sku}" already exists. Please use a different SKU.`)
         setIsSubmitting(false)
         return
       }
@@ -183,14 +166,7 @@ function ItemsContent() {
             <h1 className="text-3xl font-bold text-foreground">Inventory Items</h1>
             <p className="text-muted-foreground mt-2">Manage your product catalog</p>
           </div>
-          <Button onClick={async () => {
-            if (!isAdding) {
-              // Auto-generate SKU when opening the add form
-              const newSKU = await generateSKU()
-              setFormData({ ...formData, sku: newSKU })
-            }
-            setIsAdding(!isAdding)
-          }}>{isAdding ? "Cancel" : "+ Add Item"}</Button>
+          <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Item"}</Button>
         </div>
 
         {isAdding && (
@@ -208,27 +184,17 @@ function ItemsContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">SKU (Auto-Generated) *</label>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    placeholder={formData.sku ? "" : "Auto-generated"}
-                    value={formData.sku}
-                    readOnly
-                    disabled
-                    required
-                    className="flex-1 bg-muted cursor-not-allowed"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGenerateSKU}
-                    className="whitespace-nowrap"
-                  >
-                    🔄 Regenerate
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">System-generated unique identifier</p>
+                <label className="block text-sm font-medium mb-1">SKU *</label>
+                <Input
+                  type="text"
+                  placeholder={formData.sku ? "" : "SKU-001"}
+                  value={formData.sku}
+                  onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
+                  required
+                />
+                {formData.sku && skuExists(formData.sku, editingId ?? undefined) && (
+                  <p className="text-red-600 text-xs mt-1">This SKU already exists</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Price (RS) *</label>
@@ -265,7 +231,7 @@ function ItemsContent() {
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
               <div className="md:col-span-2 flex gap-2">
-                <Button type="submit" className="flex-1" disabled={isSubmitting || !formData.sku}>
+                <Button type="submit" className="flex-1" disabled={skuExists(formData.sku, editingId ?? undefined) || isSubmitting}>
                   {isSubmitting ? "Saving..." : editingId ? "Update Item" : "Add Item"}
                 </Button>
                 <Button
