@@ -162,7 +162,7 @@ export function Navbar() {
                 Reports
               </Button>
             </Link>
-            <Link href="/logs">
+            {/* <Link href="/logs">
               <Button 
                 variant={isActive("/logs") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -170,7 +170,7 @@ export function Navbar() {
               >
                 Activity
               </Button>
-            </Link>
+            </Link> */}
             <Button onClick={handleLogout} variant="outline" size="sm" className="w-full justify-start bg-transparent">
               Logout
             </Button>
