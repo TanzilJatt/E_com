@@ -87,7 +87,7 @@ export function Navbar() {
                 Reports
               </Button>
             </Link>
-            <Link href="/logs">
+            {/* <Link href="/logs">
               <Button 
                 variant={isActive("/logs") ? "secondary" : "ghost"} 
                 size="sm"
@@ -95,7 +95,7 @@ export function Navbar() {
               >
                 Activity
               </Button>
-            </Link>
+            </Link> */}
           </div>
 
           {/* Mobile menu button */}

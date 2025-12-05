@@ -345,11 +345,11 @@ function DashboardContent() {
                   <span className="mr-2">📈</span> View Reports
                 </Button>
               </Link>
-              <Link href="/logs" className="block">
+              {/* <Link href="/logs" className="block">
                 <Button className="w-full justify-start bg-transparent" variant="outline">
                   <span className="mr-2">📝</span> Activity Logs
                 </Button>
-              </Link>
+              </Link> */}
             </div>
           </Card>
         </div>
