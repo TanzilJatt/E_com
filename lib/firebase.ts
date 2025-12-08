@@ -126,8 +126,9 @@ if (isConfigValid) {
       console.warn("  - authDomain:", firebaseConfig.authDomain ? "✓ Set" : "✗ Missing")
     } catch (e) {
       // Silently fail if console is not available
+      // abcdef
     }
   }
 }
-
+  
 export { db, auth }
