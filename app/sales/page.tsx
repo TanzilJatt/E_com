@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
+import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,8 @@ import { DateFilter, type DatePreset } from "@/components/date-filter"
 function SalesContent() {
   // View state
   const [activeView, setActiveView] = useState<"record" | "list">("record")
+  const [authReady, setAuthReady] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
   // Record Sale State
   const [items, setItems] = useState<Item[]>([])
@@ -38,28 +41,47 @@ function SalesContent() {
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [loading, setLoading] = useState(false)
 
+  // Listen for auth state changes
   useEffect(() => {
-    fetchItems()
-    fetchSales()
+    if (!auth) {
+      setAuthReady(true)
+      return
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUserId(user.uid)
+        setAuthReady(true)
+      } else {
+        setCurrentUserId(null)
+        setAuthReady(true)
+      }
+    })
+
+    return () => unsubscribe()
   }, [])
+
+  // Fetch data when auth is ready and user is logged in
+  useEffect(() => {
+    if (authReady && currentUserId) {
+      fetchItems()
+      fetchSales()
+    }
+  }, [authReady, currentUserId])
 
   const fetchItems = async () => {
     try {
-      if (!db) {
-        console.error("Database is not available")
+      if (!db || !currentUserId) {
         return
       }
-      const snapshot = await getDocs(collection(db, "items"))
-      const itemsList = snapshot.docs
-        .map(
-          (doc) =>
-            ({
-              id: doc.id,
-              ...doc.data(),
-            }) as Item,
-        )
-        .filter((item) => item.quantity > 0)
-      setItems(itemsList)
+      
+      // Import getItems function to use user filtering
+      const { getItems } = await import("@/lib/items")
+      const itemsList = await getItems(currentUserId)
+      
+      // Filter items with quantity > 0
+      const availableItems = itemsList.filter((item) => item.quantity > 0)
+      setItems(availableItems)
     } catch (error) {
       console.error("Error fetching items:", error)
     }
@@ -67,14 +89,11 @@ function SalesContent() {
 
   const fetchSales = async () => {
     try {
-      setLoading(true)
-      const userId = auth?.currentUser?.uid
-      if (!userId) {
-        console.error("No user logged in")
-        setLoading(false)
+      if (!currentUserId) {
         return
       }
-      const salesList = await getSales(userId)
+      setLoading(true)
+      const salesList = await getSales(currentUserId)
       setSales(salesList)
       setFilteredSales(salesList)
     } catch (error) {
@@ -334,6 +353,32 @@ function SalesContent() {
 
   const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
     setDateFilter({ start, end })
+  }
+
+  if (!authReady) {
+    return (
+      <>
+        <Navbar />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          </div>
+        </main>
+      </>
+    )
+  }
+
+  if (!currentUserId) {
+    return (
+      <>
+        <Navbar />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">Please log in to access sales.</p>
+          </div>
+        </main>
+      </>
+    )
   }
 
   return (

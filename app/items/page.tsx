@@ -5,6 +5,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
+import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,8 @@ function ItemsContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
     price: 0,
@@ -29,32 +32,47 @@ function ItemsContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
+  // Listen for auth state changes
   useEffect(() => {
-    fetchItems()
+    if (!auth) {
+      setAuthReady(true)
+      return
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUserId(user.uid)
+        setAuthReady(true)
+      } else {
+        setCurrentUserId(null)
+        setAuthReady(true)
+      }
+    })
+
+    return () => unsubscribe()
   }, [])
+
+  // Fetch items when auth is ready and user is logged in
+  useEffect(() => {
+    if (authReady && currentUserId) {
+      fetchItems()
+    }
+  }, [authReady, currentUserId])
 
   const fetchItems = async () => {
     try {
       setLoading(true)
-      if (!db) {
-        setError("Database is not available. Please check your Firebase configuration and restart the dev server.")
+      if (!db || !currentUserId) {
         setLoading(false)
         return
       }
       
-      const userId = auth?.currentUser?.uid
-      if (!userId) {
-        setError("Please log in to view items")
-        setLoading(false)
-        return
-      }
-      
-      console.log("[v0] Fetching items from Firebase for user:", userId)
+      console.log("[v0] Fetching items from Firebase for user:", currentUserId)
       console.log("[v0] DB object:", db)
       
       // Import getItems function instead of direct query
       const { getItems } = await import("@/lib/items")
-      const itemsList = await getItems(userId)
+      const itemsList = await getItems(currentUserId)
       
       console.log("[v0] Fetched items:", itemsList.length)
       setAllItems(itemsList)

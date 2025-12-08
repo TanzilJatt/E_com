@@ -131,21 +131,51 @@ export async function getSales(userId?: string): Promise<Sale[]> {
     let salesQuery
     if (userId) {
       // Filter sales by userId
-      salesQuery = query(
-        collection(db, "sales"), 
-        where("userId", "==", userId),
-        orderBy("createdAt", "desc")
-      )
+      // Note: This requires a composite index (userId + createdAt)
+      // The index will be auto-created when you click the link in the error
+      try {
+        salesQuery = query(
+          collection(db, "sales"), 
+          where("userId", "==", userId),
+          orderBy("createdAt", "desc")
+        )
+        const snapshot = await getDocs(salesQuery)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Sale[]
+      } catch (indexError: any) {
+        // If index doesn't exist yet, fall back to client-side sorting
+        if (indexError.code === 'failed-precondition') {
+          console.warn("Index not created yet, using client-side sorting")
+          salesQuery = query(
+            collection(db, "sales"), 
+            where("userId", "==", userId)
+          )
+          const snapshot = await getDocs(salesQuery)
+          const sales = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Sale[]
+          
+          // Sort on client side
+          return sales.sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() || 0
+            const bTime = b.createdAt?.toMillis?.() || 0
+            return bTime - aTime
+          })
+        }
+        throw indexError
+      }
     } else {
       // Get all sales (fallback for backwards compatibility)
       salesQuery = query(collection(db, "sales"), orderBy("createdAt", "desc"))
+      const snapshot = await getDocs(salesQuery)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Sale[]
     }
-    
-    const snapshot = await getDocs(salesQuery)
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Sale[]
   } catch (error) {
     console.error("Error fetching sales:", error)
     throw error
