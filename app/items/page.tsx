@@ -41,16 +41,21 @@ function ItemsContent() {
         setLoading(false)
         return
       }
-      console.log("[v0] Fetching items from Firebase...")
+      
+      const userId = auth?.currentUser?.uid
+      if (!userId) {
+        setError("Please log in to view items")
+        setLoading(false)
+        return
+      }
+      
+      console.log("[v0] Fetching items from Firebase for user:", userId)
       console.log("[v0] DB object:", db)
-      const snapshot = await getDocs(collection(db, "items"))
-      const itemsList = snapshot.docs.map(
-        (doc) =>
-          ({
-            id: doc.id,
-            ...doc.data(),
-          }) as Item,
-      )
+      
+      // Import getItems function instead of direct query
+      const { getItems } = await import("@/lib/items")
+      const itemsList = await getItems(userId)
+      
       console.log("[v0] Fetched items:", itemsList.length)
       setAllItems(itemsList)
       setItems(itemsList)

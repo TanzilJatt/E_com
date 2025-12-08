@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { db } from "@/lib/firebase"
+import { db, auth } from "@/lib/firebase"
 import { collection, getDocs, query, orderBy } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
@@ -37,16 +37,20 @@ function DashboardContent() {
           console.error("Database is not available. Please check your Firebase configuration.")
           return
         }
-        // Get items
-        const itemsSnapshot = await getDocs(collection(db, "items"))
-        const items = itemsSnapshot.docs.map((d) => d.data())
+        
+        const userId = auth?.currentUser?.uid
+        if (!userId) {
+          console.error("No user logged in")
+          return
+        }
+        
+        // Get user-specific items
+        const { getItems } = await import("@/lib/items")
+        const items = await getItems(userId)
 
-        // Get sales
-        const salesSnapshot = await getDocs(query(collection(db, "sales"), orderBy("createdAt", "desc")))
-        const sales = salesSnapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
+        // Get user-specific sales
+        const { getSales } = await import("@/lib/sales")
+        const sales = await getSales(userId)
 
         // Calculate stats
         const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)

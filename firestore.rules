@@ -11,28 +11,57 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
     
-    // Items collection - authenticated users can read/write
+    // Items collection - users can only access their own items
     match /items/{itemId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      // Users can read their own items
+      allow read: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      // Users can create items (createdBy must be set to their uid)
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      
+      // Users can update their own items
+      allow update: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      // Users can delete their own items
+      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
     }
     
-    // Sales collection - authenticated users can read/write
+    // Sales collection - users can only access their own sales
     match /sales/{saleId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      // Users can read their own sales
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can create sales (userId must be set to their uid)
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own sales
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own sales
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
     
-    // Expenses collection - authenticated users only
+    // Expenses collection - users can only access their own expenses
     match /expenses/{expenseId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      // Users can read their own expenses
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can create expenses (userId must be set to their uid)
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own expenses
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own expenses
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
     
-    // Activity logs - authenticated users can read/write
+    // Activity logs - users can only read their own logs
     match /activityLogs/{logId} {
-      allow read: if isSignedIn();
+      // Users can read their own activity logs
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Only system can write logs (application-level control)
       allow create: if isSignedIn();
       allow update, delete: if false; // Logs should not be modified
     }

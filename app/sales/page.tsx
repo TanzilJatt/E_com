@@ -68,7 +68,13 @@ function SalesContent() {
   const fetchSales = async () => {
     try {
       setLoading(true)
-      const salesList = await getSales()
+      const userId = auth?.currentUser?.uid
+      if (!userId) {
+        console.error("No user logged in")
+        setLoading(false)
+        return
+      }
+      const salesList = await getSales(userId)
       setSales(salesList)
       setFilteredSales(salesList)
     } catch (error) {

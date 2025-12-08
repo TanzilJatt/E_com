@@ -51,14 +51,21 @@ function ExpensesContent() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const expensesList = await getExpenses()
+      const userId = auth?.currentUser?.uid
+      if (!userId) {
+        setError("Please log in to view expenses")
+        setLoading(false)
+        return
+      }
+      
+      const expensesList = await getExpenses(userId)
       setAllExpenses(expensesList)
       setExpenses(expensesList)
 
-      const total = await getTotalExpenses()
+      const total = await getTotalExpenses(userId)
       setTotalExpenses(total)
 
-      const breakdown = await getTotalExpensesByCategory()
+      const breakdown = await getTotalExpensesByCategory(userId)
       setCategoryBreakdown(breakdown)
 
       setError("")

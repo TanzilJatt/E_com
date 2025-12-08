@@ -1,5 +1,5 @@
 import { db } from "./firebase"
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, Timestamp } from "firebase/firestore"
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, Timestamp, query, where } from "firebase/firestore"
 import { logActivity } from "./activity-logs"
 
 export interface Expense {
@@ -77,13 +77,23 @@ export async function deleteExpense(expenseId: string, userId: string, userName:
   }
 }
 
-export async function getExpenses(): Promise<Expense[]> {
+export async function getExpenses(userId?: string): Promise<Expense[]> {
   try {
     if (!db) {
       console.error("Database is not available")
       return []
     }
-    const snapshot = await getDocs(collection(db, "expenses"))
+    
+    let expensesQuery
+    if (userId) {
+      // Filter expenses by userId
+      expensesQuery = query(collection(db, "expenses"), where("userId", "==", userId))
+    } else {
+      // Get all expenses (fallback for backwards compatibility)
+      expensesQuery = collection(db, "expenses")
+    }
+    
+    const snapshot = await getDocs(expensesQuery)
     return snapshot.docs
       .map((doc) => ({
         id: doc.id,
@@ -96,9 +106,9 @@ export async function getExpenses(): Promise<Expense[]> {
   }
 }
 
-export async function getExpensesByDateRange(startDate: Date, endDate: Date): Promise<Expense[]> {
+export async function getExpensesByDateRange(startDate: Date, endDate: Date, userId?: string): Promise<Expense[]> {
   try {
-    const expenses = await getExpenses()
+    const expenses = await getExpenses(userId)
     return expenses.filter((expense) => {
       const expenseDate = expense.date?.toDate?.() || new Date()
       return expenseDate >= startDate && expenseDate <= endDate
@@ -109,9 +119,9 @@ export async function getExpensesByDateRange(startDate: Date, endDate: Date): Pr
   }
 }
 
-export async function getTotalExpensesByCategory(): Promise<Record<string, number>> {
+export async function getTotalExpensesByCategory(userId?: string): Promise<Record<string, number>> {
   try {
-    const expenses = await getExpenses()
+    const expenses = await getExpenses(userId)
     return expenses.reduce(
       (acc, expense) => {
         acc[expense.category] = (acc[expense.category] || 0) + expense.amount
@@ -125,9 +135,9 @@ export async function getTotalExpensesByCategory(): Promise<Record<string, numbe
   }
 }
 
-export async function getTotalExpenses(): Promise<number> {
+export async function getTotalExpenses(userId?: string): Promise<number> {
   try {
-    const expenses = await getExpenses()
+    const expenses = await getExpenses(userId)
     return expenses.reduce((sum, expense) => sum + expense.amount, 0)
   } catch (error: any) {
     console.error("Error calculating total expenses:", error)

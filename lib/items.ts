@@ -148,17 +148,26 @@ export async function deleteItem(itemId: string): Promise<void> {
   }
 }
 
-export async function getItems(): Promise<Item[]> {
+export async function getItems(userId?: string): Promise<Item[]> {
   try {
     if (!db) {
       console.error("[v0] Database is not available")
       return []
     }
-    console.log("[v0] Firebase getItems() called")
+    console.log("[v0] Firebase getItems() called for user:", userId || "all")
     console.log("[v0] Firebase db object exists:", !!db)
     console.log("[v0] Firebase db type:", typeof db)
 
-    const docs = await getDocs(collection(db, "items"))
+    let itemsQuery
+    if (userId) {
+      // Filter items by userId
+      itemsQuery = query(collection(db, "items"), where("createdBy", "==", userId))
+    } else {
+      // Get all items (fallback for backwards compatibility)
+      itemsQuery = collection(db, "items")
+    }
+
+    const docs = await getDocs(itemsQuery)
 
     console.log("[v0] Query executed successfully")
     console.log("[v0] Number of items returned:", docs.docs.length)

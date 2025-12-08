@@ -122,13 +122,26 @@ export async function createSale(
   }
 }
 
-export async function getSales(): Promise<Sale[]> {
+export async function getSales(userId?: string): Promise<Sale[]> {
   try {
     if (!db) {
       throw new Error("Database is not available")
     }
-    const q = query(collection(db, "sales"), orderBy("createdAt", "desc"))
-    const snapshot = await getDocs(q)
+    
+    let salesQuery
+    if (userId) {
+      // Filter sales by userId
+      salesQuery = query(
+        collection(db, "sales"), 
+        where("userId", "==", userId),
+        orderBy("createdAt", "desc")
+      )
+    } else {
+      // Get all sales (fallback for backwards compatibility)
+      salesQuery = query(collection(db, "sales"), orderBy("createdAt", "desc"))
+    }
+    
+    const snapshot = await getDocs(salesQuery)
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
