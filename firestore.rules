@@ -56,6 +56,21 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
     
+    // Purchases collection - users can only access their own purchases
+    match /purchases/{purchaseId} {
+      // Users can read their own purchases
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can create purchases (userId must be set to their uid)
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own purchases
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own purchases
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
     // Activity logs - users can only read their own logs
     match /activityLogs/{logId} {
       // Users can read their own activity logs

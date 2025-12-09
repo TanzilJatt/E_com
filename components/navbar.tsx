@@ -69,6 +69,15 @@ export function Navbar() {
                 Sales
               </Button>
             </Link>
+            <Link href="/purchase">
+              <Button 
+                variant={isActive("/purchase") ? "secondary" : "ghost"} 
+                size="sm"
+                className={isActive("/purchase") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
+              >
+                Purchase
+              </Button>
+            </Link>
             <Link href="/expenses">
               <Button 
                 variant={isActive("/expenses") ? "secondary" : "ghost"} 
@@ -142,6 +151,15 @@ export function Navbar() {
                 className={`w-full justify-start ${isActive("/sales") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
               >
                 Sales
+              </Button>
+            </Link>
+            <Link href="/purchase">
+              <Button 
+                variant={isActive("/purchase") ? "secondary" : "ghost"} 
+                size="sm" 
+                className={`w-full justify-start ${isActive("/purchase") ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+              >
+                Purchase
               </Button>
             </Link>
             <Link href="/expenses">

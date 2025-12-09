@@ -38,15 +38,8 @@ export async function createSale(
     if (!db) {
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
-    // Validate sale type
+    // No quantity restrictions - users can select any number of items for retail or wholesale
     const totalQuantity = saleData.items.reduce((sum, item) => sum + item.quantity, 0)
-
-    if (saleData.type === "wholesale" && totalQuantity < 12) {
-      throw new Error("Wholesale sales require minimum 12 items")
-    }
-    if (saleData.type === "retail" && totalQuantity > 11) {
-      throw new Error("Retail sales cannot exceed 11 items")
-    }
 
     // Clean items data - remove undefined values
     const cleanedItems = saleData.items.map(item => {

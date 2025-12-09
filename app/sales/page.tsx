@@ -23,7 +23,7 @@ function SalesContent() {
   const [saleType, setSaleType] = useState<"wholesale" | "retail">("retail")
   const [cart, setCart] = useState<SaleItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState("")
-  const [quantity, setQuantity] = useState(1)
+  const [quantity, setQuantity] = useState<number | "">("")
   const [cashPrice, setCashPrice] = useState<number | "">("")
   const [creditPrice, setCreditPrice] = useState<number | "">("")
   const [paymentCash, setPaymentCash] = useState(false)
@@ -168,7 +168,7 @@ function SalesContent() {
       return
     }
 
-    if (quantity > item.quantity) {
+    if (quantity && quantity > item.quantity) {
       setError("Not enough stock available")
       return
     }
@@ -177,20 +177,23 @@ function SalesContent() {
     const effectiveCashPrice = cashPrice !== "" ? cashPrice : item.price
     const effectiveCreditPrice = creditPrice !== "" ? creditPrice : item.price
     
+    // Ensure quantity is a valid number
+    const qty = typeof quantity === 'number' ? quantity : 0
+    
     // Determine which price to use for totalPrice based on what's entered
     let totalPrice = 0
     if (cashPrice !== "" && creditPrice !== "") {
       // Both prices entered - use average for display, will be split later
-      totalPrice = quantity * ((effectiveCashPrice + effectiveCreditPrice) / 2)
+      totalPrice = qty * ((effectiveCashPrice + effectiveCreditPrice) / 2)
     } else if (cashPrice !== "") {
-      totalPrice = quantity * effectiveCashPrice
+      totalPrice = qty * effectiveCashPrice
     } else {
-      totalPrice = quantity * effectiveCreditPrice
+      totalPrice = qty * effectiveCreditPrice
     }
     
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
-      if (existingItem.quantity + quantity > item.quantity) {
+      if (existingItem.quantity + qty > item.quantity) {
         setError("Not enough stock available")
         return
       }
@@ -203,7 +206,7 @@ function SalesContent() {
         {
           itemId: selectedItemId,
           itemName: item.name,
-          quantity,
+          quantity: qty,
           pricePerUnit: item.price,
           cashPrice: cashPrice !== "" ? cashPrice : undefined,
           creditPrice: creditPrice !== "" ? creditPrice : undefined,
@@ -213,7 +216,7 @@ function SalesContent() {
     }
 
     setSelectedItemId("")
-    setQuantity(1)
+    setQuantity("")
     setCashPrice("")
     setCreditPrice("")
     
@@ -245,14 +248,7 @@ function SalesContent() {
     }
 
     const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0)
-    if (saleType === "wholesale" && totalQuantity < 12) {
-      setError("Wholesale sales require minimum 12 items")
-      return
-    }
-    if (saleType === "retail" && totalQuantity > 11) {
-      setError("Retail sales cannot exceed 11 items")
-      return
-    }
+    // No quantity restrictions - users can select any number of items
 
     // Validate payment method matches entered prices
     if (!paymentCash && !paymentCredit) {
@@ -314,7 +310,7 @@ function SalesContent() {
         setSuccess(`Sale completed successfully! Transaction ID: ${saleId}`)
         setCart([])
         setSelectedItemId("")
-        setQuantity(1)
+        setQuantity("")
         setCashPrice("")
         setCreditPrice("")
         setPaymentCash(false)
@@ -420,7 +416,7 @@ function SalesContent() {
                 checked={saleType === "retail"}
                 onChange={(e) => setSaleType(e.target.value as "retail" | "wholesale")}
               />
-              <span>Retail (1-11 items)</span>
+              <span>Retail</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -429,7 +425,7 @@ function SalesContent() {
                 checked={saleType === "wholesale"}
                 onChange={(e) => setSaleType(e.target.value as "retail" | "wholesale")}
               />
-              <span>Wholesale (12+ items)</span>
+              <span>Wholesale</span>
             </label>
           </div>
         </Card>
@@ -458,10 +454,17 @@ function SalesContent() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Quantity</label>
                   <Input
-                    type="number"
-                    min="1"
+                    type="text"
                     value={quantity}
-                    onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
+                    placeholder="0.00"
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      // Allow only numbers
+                      if (val === "" || /^\d+$/.test(val)) {
+                        setQuantity(val === "" ? "" : Number.parseInt(val))
+                      }
+                    }}
                   />
                 </div>
                 
@@ -479,11 +482,10 @@ function SalesContent() {
                       type="number"
                       min="0"
                       step="0.01"
-                      placeholder={selectedItemId ? `Default: RS ${items.find(i => i.id === selectedItemId)?.price || 0}` : "Enter cash price"}
-                      value={cashPrice}
+                      placeholder="00.0"
+                      value={cashPrice === "" ? "" : cashPrice}
                       onChange={(e) => setCashPrice(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     />
-                    {/* <p className="text-xs text-muted-foreground mt-1">Enter the price if paid in cash</p> */}
                   </div>
                   
                   <div>
@@ -494,11 +496,10 @@ function SalesContent() {
                       type="number"
                       min="0"
                       step="0.01"
-                      placeholder={selectedItemId ? `Default: RS ${items.find(i => i.id === selectedItemId)?.price || 0}` : "Enter credit price"}
-                      value={creditPrice}
+                      placeholder="00.0"
+                      value={creditPrice === "" ? "" : creditPrice}
                       onChange={(e) => setCreditPrice(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     />
-                    {/* <p className="text-xs text-muted-foreground mt-1">Enter the price if paid on credit</p> */}
                   </div>
                 </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}
@@ -620,16 +621,6 @@ function SalesContent() {
                 )}
               </div>
 
-              <div className="space-y-2 mb-4 text-xs text-muted-foreground">
-                {saleType === "wholesale" && totalQuantity < 12 && (
-                  <p className="text-yellow-600 dark:text-yellow-400">
-                    Need {12 - totalQuantity} more items for wholesale
-                  </p>
-                )}
-                {saleType === "retail" && totalQuantity > 11 && (
-                  <p className="text-red-600 dark:text-red-400">Too many items for retail ({totalQuantity})</p>
-                )}
-              </div>
 
               <Button onClick={handleCompleteSale} disabled={isLoading || cart.length === 0} className="w-full">
                 {isLoading ? "Processing..." : "Complete Sale"}

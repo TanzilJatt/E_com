@@ -152,6 +152,64 @@ function DashboardContent() {
           <p className="text-muted-foreground mt-2">Welcome back! Here's your inventory overview.</p>
         </div>
 
+        {/* Filters */}
+        <Card className="p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">Filter Dashboard Data</h2>
+          
+          {/* Date Filter */}
+          <div className="mb-4">
+            <DateFilter onFilter={handleDateFilter} />
+          </div>
+
+          {/* Other Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Search */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Search</label>
+              <Input
+                type="text"
+                placeholder="Search by ID or item..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            {/* Sale Type Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Sale Type</label>
+              <select
+                value={saleTypeFilter}
+                onChange={(e) => setSaleTypeFilter(e.target.value as any)}
+                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+              >
+                <option value="all">All Types</option>
+                <option value="retail">Retail</option>
+                <option value="wholesale">Wholesale</option>
+              </select>
+            </div>
+
+            {/* Payment Method Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Payment Method</label>
+              <select
+                value={paymentMethodFilter}
+                onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
+                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+              >
+                <option value="all">All Methods</option>
+                <option value="cash">Cash Only</option>
+                <option value="credit">Credit Only</option>
+                <option value="both">Both (Cash + Credit)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Filter Summary */}
+          <div className="mt-4 text-sm text-muted-foreground">
+            Showing {filteredSales.length} of {recentSales.length} recent sales
+          </div>
+        </Card>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <Card className="p-6">
@@ -212,65 +270,7 @@ function DashboardContent() {
 
         {/* Recent Sales & Quick Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="col-span-1 lg:col-span-2 space-y-6">
-            {/* Filters */}
-            <Card className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Filter Recent Sales</h2>
-              
-              {/* Date Filter */}
-              <div className="mb-4">
-                <DateFilter onFilter={handleDateFilter} />
-              </div>
-
-              {/* Other Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Search */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Search</label>
-                  <Input
-                    type="text"
-                    placeholder="Search by ID or item..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-
-                {/* Sale Type Filter */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Sale Type</label>
-                  <select
-                    value={saleTypeFilter}
-                    onChange={(e) => setSaleTypeFilter(e.target.value as any)}
-                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="retail">Retail</option>
-                    <option value="wholesale">Wholesale</option>
-                  </select>
-                </div>
-
-                {/* Payment Method Filter */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Payment Method</label>
-                  <select
-                    value={paymentMethodFilter}
-                    onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-                  >
-                    <option value="all">All Methods</option>
-                    <option value="cash">Cash Only</option>
-                    <option value="credit">Credit Only</option>
-                    <option value="both">Both (Cash + Credit)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Filter Summary */}
-              <div className="mt-4 text-sm text-muted-foreground">
-                Showing {filteredSales.length} of {recentSales.length} sales
-              </div>
-            </Card>
-
+          <div className="col-span-1 lg:col-span-2">
             {/* Recent Sales Table */}
             <Card className="p-6">
               <div className="flex justify-between items-center mb-4">
@@ -286,44 +286,59 @@ function DashboardContent() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left py-2 px-2">Transaction ID</th>
+                        <th className="text-left py-2 px-2">Date</th>
                         <th className="text-left py-2 px-2">Type</th>
+                        <th className="text-left py-2 px-2">Description</th>
                         <th className="text-left py-2 px-2">Payment</th>
-                        <th className="text-left py-2 px-2">Items</th>
                         <th className="text-right py-2 px-2">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSales.map((sale) => (
-                        <tr key={sale.id} className="border-b border-border hover:bg-muted">
-                          <td className="py-2 px-2 font-mono text-xs">{sale.id.slice(0, 8)}...</td>
-                          <td className="py-2 px-2">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
-                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                                  : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                }`}
-                            >
-                              {sale.type}
-                            </span>
-                          </td>
-                          <td className="py-2 px-2">
-                            {sale.paymentMethod ? (
-                              sale.paymentMethod.cash && sale.paymentMethod.credit ? (
-                                <span className="text-xs text-purple-600 dark:text-purple-400">Both</span>
-                              ) : sale.paymentMethod.cash ? (
-                                <span className="text-xs text-green-600 dark:text-green-400">Cash</span>
+                      {filteredSales.map((sale) => {
+                        const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
+                        const itemsDescription = sale.items?.map((item: any) => `${item.itemName} (${item.quantity})`).join(", ") || "No items"
+                        
+                        return (
+                          <tr key={sale.id} className="border-b border-border hover:bg-muted">
+                            <td className="py-2 px-2 whitespace-nowrap">
+                              {saleDate.toLocaleDateString('en-GB', { 
+                                day: '2-digit', 
+                                month: 'short', 
+                                year: 'numeric' 
+                              })}
+                            </td>
+                            <td className="py-2 px-2">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
+                                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                    : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                  }`}
+                              >
+                                {sale.type}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 max-w-xs">
+                              <div className="truncate" title={itemsDescription}>
+                                {itemsDescription}
+                              </div>
+                            </td>
+                            <td className="py-2 px-2">
+                              {sale.paymentMethod ? (
+                                sale.paymentMethod.cash && sale.paymentMethod.credit ? (
+                                  <span className="text-xs text-purple-600 dark:text-purple-400">Both</span>
+                                ) : sale.paymentMethod.cash ? (
+                                  <span className="text-xs text-green-600 dark:text-green-400">Cash</span>
+                                ) : (
+                                  <span className="text-xs text-blue-600 dark:text-blue-400">Credit</span>
+                                )
                               ) : (
-                                <span className="text-xs text-blue-600 dark:text-blue-400">Credit</span>
-                              )
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-2">{sale.items?.length || 0}</td>
-                          <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
-                        </tr>
-                      ))}
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -124,6 +124,32 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
     onFilter(null, null, "this_month")
   }
 
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
+  const getDateRangeText = (presetValue: DatePreset): string => {
+    if (presetValue === "custom") return ""
+    const [start, end] = getDateRange(presetValue)
+    
+    switch (presetValue) {
+      case "today":
+      case "yesterday":
+        return `(${formatDate(start)})`
+      case "this_week":
+      case "last_week":
+        return `(${formatDate(start)} - ${formatDate(end)})`
+      case "this_month":
+      case "last_month":
+        return `(${start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })})`
+      case "this_year":
+      case "last_year":
+        return `(${start.getFullYear()})`
+      default:
+        return ""
+    }
+  }
+
   return (
     <Card className="p-4 mb-6">
       <div className="space-y-4">
@@ -133,16 +159,16 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
             <select
               value={preset}
               onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-              className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
+              className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
             >
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="this_week">This Week</option>
-              <option value="last_week">Last Week</option>
-              <option value="this_month">This Month</option>
-              <option value="last_month">Last Month</option>
-              <option value="this_year">This Year</option>
-              <option value="last_year">Last Year</option>
+              <option value="today">Today {getDateRangeText("today")}</option>
+              <option value="yesterday">Yesterday {getDateRangeText("yesterday")}</option>
+              <option value="this_week">This Week {getDateRangeText("this_week")}</option>
+              <option value="last_week">Last Week {getDateRangeText("last_week")}</option>
+              <option value="this_month">This Month {getDateRangeText("this_month")}</option>
+              <option value="last_month">Last Month {getDateRangeText("last_month")}</option>
+              <option value="this_year">This Year {getDateRangeText("this_year")}</option>
+              <option value="last_year">Last Year {getDateRangeText("last_year")}</option>
               <option value="custom">Custom Range</option>
             </select>
           </div>
@@ -178,7 +204,7 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
           )}
           
           <div className="flex items-end">
-            <Button variant="outline" onClick={handleClearFilter}>
+            <Button variant="outline" onClick={handleClearFilter} style={{ padding: "21px 20px" }}>
               Clear Filter
             </Button>
           </div>
