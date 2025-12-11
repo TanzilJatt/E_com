@@ -23,7 +23,7 @@ function DashboardContent() {
   const [recentSales, setRecentSales] = useState<any[]>([])
   const [filteredSales, setFilteredSales] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
-  
+
   // Filter states
   const [searchTerm, setSearchTerm] = useState("")
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "wholesale">("all")
@@ -37,13 +37,13 @@ function DashboardContent() {
           console.error("Database is not available. Please check your Firebase configuration.")
           return
         }
-        
+
         const userId = auth?.currentUser?.uid
         if (!userId) {
           console.error("No user logged in")
           return
         }
-        
+
         // Get user-specific items
         const { getItems } = await import("@/lib/items")
         const items = await getItems(userId)
@@ -116,7 +116,7 @@ function DashboardContent() {
     if (paymentMethodFilter !== "all") {
       filtered = filtered.filter((sale) => {
         if (!sale.paymentMethod) return false
-        
+
         if (paymentMethodFilter === "both") {
           return sale.paymentMethod.cash && sale.paymentMethod.credit
         } else if (paymentMethodFilter === "cash") {
@@ -155,7 +155,7 @@ function DashboardContent() {
         {/* Filters */}
         <Card className="p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4">Filter Dashboard Data</h2>
-          
+
           {/* Date Filter */}
           <div className="mb-4">
             <DateFilter onFilter={handleDateFilter} />
@@ -239,9 +239,9 @@ function DashboardContent() {
           <Card className="col-span-1 lg:col-span-2 p-6">
             <h2 className="text-lg font-semibold mb-4">Revenue Trend</h2>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
+              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                <XAxis stroke="var(--muted-foreground)" />
+                <XAxis dataKey="date" stroke="var(--muted-foreground)" />
                 <YAxis stroke="var(--muted-foreground)" />
                 <Tooltip />
                 <Line type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2} />
@@ -257,9 +257,10 @@ function DashboardContent() {
                   { name: "Retail", value: stats.retailSales },
                   { name: "Wholesale", value: stats.wholesaleSales },
                 ]}
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               >
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                <XAxis stroke="var(--muted-foreground)" />
+                <XAxis dataKey="name" stroke="var(--muted-foreground)" />
                 <YAxis stroke="var(--muted-foreground)" />
                 <Tooltip />
                 <Bar dataKey="value" fill="var(--primary)" />
@@ -282,41 +283,41 @@ function DashboardContent() {
               {filteredSales.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No sales found matching filters</div>
               ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
                         <th className="text-left py-2 px-2">Date</th>
-                    <th className="text-left py-2 px-2">Type</th>
+                        <th className="text-left py-2 px-2">Type</th>
                         <th className="text-left py-2 px-2">Description</th>
                         <th className="text-left py-2 px-2">Payment</th>
-                    <th className="text-right py-2 px-2">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
+                        <th className="text-right py-2 px-2">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       {filteredSales.map((sale) => {
                         const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
                         const itemsDescription = sale.items?.map((item: any) => `${item.itemName} (${item.quantity})`).join(", ") || "No items"
-                        
+
                         return (
-                    <tr key={sale.id} className="border-b border-border hover:bg-muted">
+                          <tr key={sale.id} className="border-b border-border hover:bg-muted">
                             <td className="py-2 px-2 whitespace-nowrap">
-                              {saleDate.toLocaleDateString('en-GB', { 
-                                day: '2-digit', 
-                                month: 'short', 
-                                year: 'numeric' 
+                              {saleDate.toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric'
                               })}
                             </td>
-                      <td className="py-2 px-2">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                              : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                            }`}
-                        >
-                          {sale.type}
-                        </span>
-                      </td>
+                            <td className="py-2 px-2">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
+                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                  : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                  }`}
+                              >
+                                {sale.type}
+                              </span>
+                            </td>
                             <td className="py-2 px-2 max-w-xs">
                               <div className="truncate" title={itemsDescription}>
                                 {itemsDescription}
@@ -335,15 +336,15 @@ function DashboardContent() {
                                 <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </td>
-                      <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
-                    </tr>
+                            <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
+                          </tr>
                         )
                       })}
-                </tbody>
-              </table>
-            </div>
+                    </tbody>
+                  </table>
+                </div>
               )}
-          </Card>
+            </Card>
           </div>
 
           <Card className="p-6">

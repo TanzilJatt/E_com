@@ -391,9 +391,9 @@ function ExpensesContent() {
               <Card className="p-6">
                 <h2 className="text-lg font-semibold mb-4">Expenses by Category</h2>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartData}>
+                  <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                    <XAxis stroke="var(--muted-foreground)" angle={-45} textAnchor="end" height={80} />
+                    <XAxis dataKey="name" stroke="var(--muted-foreground)" angle={-45} textAnchor="end" height={80} />
                     <YAxis stroke="var(--muted-foreground)" />
                     <Tooltip />
                     <Bar dataKey="value" fill="var(--primary)" />

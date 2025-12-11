@@ -112,7 +112,6 @@ function SalesContent() {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter((sale) =>
-        sale.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
       )
@@ -382,7 +381,7 @@ function SalesContent() {
     }
     
     // Prepare table data
-    const tableData = filteredSales.map((sale) => {
+    const tableData = filteredSales.map((sale, index) => {
       const date = sale.transactionDate?.toDate 
         ? new Date(sale.transactionDate.toDate()).toLocaleDateString()
         : new Date(sale.transactionDate).toLocaleDateString()
@@ -406,7 +405,7 @@ function SalesContent() {
       }
       
       return [
-        `#${sale.id.slice(0, 8)}`,
+        `#${(index + 1).toString().padStart(4, '0')}`,
         date,
         sale.type.toUpperCase(),
         itemsList,
@@ -418,7 +417,7 @@ function SalesContent() {
     // Add table
     autoTable(doc, {
       startY: filterInfo.length > 0 ? 42 : 36,
-      head: [["ID", "Date", "Type", "Items", "Payment", "Total"]],
+      head: [["#", "Date", "Type", "Items", "Payment", "Total"]],
       body: tableData,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 2 },
@@ -739,7 +738,7 @@ function SalesContent() {
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by ID, user, or item..."
+                    placeholder="Search by user or item..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -796,12 +795,12 @@ function SalesContent() {
                 <div className="text-center py-8 text-muted-foreground">No sales found</div>
               ) : (
                 <div className="space-y-4">
-                  {filteredSales.map((sale) => (
+                  {filteredSales.map((sale, index) => (
                     <div key={sale.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
                       <div className="flex flex-wrap justify-between items-start gap-4 mb-3">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">#{sale.id.slice(0, 8)}</span>
+                            <span className="font-semibold">#{(index + 1).toString().padStart(4, '0')}</span>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                               sale.type === "wholesale" 
                                 ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
