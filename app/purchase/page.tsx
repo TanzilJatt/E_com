@@ -11,6 +11,8 @@ import { getItems, addItem, type Item } from "@/lib/items"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { useRouter } from "next/navigation"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 type PurchaseMode = "existing" | "new"
 
@@ -22,6 +24,7 @@ interface NewItemForm {
   unitCost: number
   price: number
   description: string
+  vendor: string
 }
 
 function PurchaseContent() {
@@ -31,6 +34,7 @@ function PurchaseContent() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [activeView, setActiveView] = useState<"record" | "view">("record")
@@ -52,6 +56,7 @@ function PurchaseContent() {
     unitCost: 0,
     price: 0,
     description: "",
+    vendor: "",
   })
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -146,6 +151,7 @@ function PurchaseContent() {
           price: newItem.price,
           quantity: 0, // Initial quantity is 0, will be updated after purchase
           description: newItem.description,
+          vendor: newItem.vendor,
         },
         userId,
         userName
@@ -174,6 +180,7 @@ function PurchaseContent() {
         unitCost: 0,
         price: 0,
         description: "",
+        vendor: "",
       })
 
       setSuccess("New item added to cart and inventory!")
@@ -200,6 +207,9 @@ function PurchaseContent() {
   const handleSubmitPurchase = async () => {
     if (!userId) return
 
+    // Prevent multiple submissions
+    if (isSubmitting) return
+
     if (!supplierName) {
       setError("Please enter supplier name")
       return
@@ -211,6 +221,9 @@ function PurchaseContent() {
     }
 
     try {
+      setIsSubmitting(true)
+      setError("")
+      
       await createPurchase(userId, {
         supplierName,
         supplierContact,
@@ -226,10 +239,9 @@ function PurchaseContent() {
       setSupplierName("")
       setSupplierContact("")
       setNotes("")
-      setError("")
 
-      // Refresh purchases list
-      await fetchPurchases()
+      // Refresh purchases and items lists
+      await Promise.all([fetchPurchases(), fetchItems()])
 
       setTimeout(() => {
         setSuccess("")
@@ -238,7 +250,70 @@ function PurchaseContent() {
     } catch (err) {
       console.error("Error recording purchase:", err)
       setError("Failed to record purchase")
+    } finally {
+      setIsSubmitting(false)
     }
+  }
+
+  const exportPurchasesToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Purchase Report", 14, 22)
+    
+    // Add date
+    doc.setFontSize(10)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    
+    // Prepare table data
+    const tableData = purchases.map((purchase) => {
+      const purchaseDate = purchase.purchaseDate?.toDate
+        ? purchase.purchaseDate.toDate()
+        : new Date()
+      
+      const itemsList = purchase.items.map((item) =>
+        `${item.itemName} (${item.sku}) x${item.quantity} @ RS ${item.unitCost.toFixed(2)}`
+      ).join("\n")
+      
+      return [
+        `#${purchase.id?.slice(0, 8) || "N/A"}`,
+        purchaseDate.toLocaleDateString(),
+        purchase.supplierName,
+        purchase.supplierContact || "-",
+        itemsList,
+        `RS ${purchase.totalAmount.toFixed(2)}`
+      ]
+    })
+    
+    // Add table
+    autoTable(doc, {
+      startY: 36,
+      head: [["ID", "Date", "Supplier", "Contact", "Items", "Total"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 55 },
+        5: { cellWidth: 25 }
+      }
+    })
+    
+    // Add summary
+    const finalY = (doc as any).lastAutoTable.finalY || 36
+    doc.setFontSize(12)
+    doc.text(`Total Purchases: ${purchases.length}`, 14, finalY + 10)
+    const totalAmount = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0)
+    doc.text(`Grand Total: RS ${totalAmount.toFixed(2)}`, 14, finalY + 18)
+    
+    // Save PDF
+    const fileName = `purchases-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
   }
 
   if (loading) {
@@ -288,12 +363,14 @@ function PurchaseContent() {
                 <Button
                   variant={mode === "existing" ? "default" : "outline"}
                   onClick={() => setMode("existing")}
+                  disabled={isSubmitting}
                 >
                   Purchase Existing Items
                 </Button>
                 <Button
                   variant={mode === "new" ? "default" : "outline"}
                   onClick={() => setMode("new")}
+                  disabled={isSubmitting}
                 >
                   Add New Items
                 </Button>
@@ -310,6 +387,7 @@ function PurchaseContent() {
                     value={supplierName}
                     onChange={(e) => setSupplierName(e.target.value)}
                     placeholder="Enter supplier name"
+                    disabled={isSubmitting}
                   />
                 </div>
                 <div>
@@ -318,6 +396,7 @@ function PurchaseContent() {
                     value={supplierContact}
                     onChange={(e) => setSupplierContact(e.target.value)}
                     placeholder="Phone or email"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>
@@ -364,7 +443,7 @@ function PurchaseContent() {
                     />
                   </div>
                 </div>
-                <Button onClick={handleAddExistingItem} className="mt-4">
+                <Button onClick={handleAddExistingItem} className="mt-4" disabled={isSubmitting}>
                   Add to Cart
                 </Button>
               </Card>
@@ -417,6 +496,15 @@ function PurchaseContent() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium mb-2">Vendor Name (Optional)</label>
+                    <Input
+                      value={newItem.vendor}
+                      onChange={(e) => setNewItem({ ...newItem, vendor: e.target.value })}
+                      placeholder="Enter vendor or supplier name"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium mb-2">Description (Optional)</label>
                     <Textarea
                       value={newItem.description}
@@ -432,7 +520,7 @@ function PurchaseContent() {
                     </p>
                   </div>
                 </div>
-                <Button onClick={handleAddNewItem} className="mt-4">
+                <Button onClick={handleAddNewItem} className="mt-4" disabled={isSubmitting}>
                   Add to Cart & Inventory
                 </Button>
               </Card>
@@ -463,7 +551,7 @@ function PurchaseContent() {
                           <td className="py-2 px-2 text-right">RS {item.unitCost.toFixed(2)}</td>
                           <td className="py-2 px-2 text-right font-semibold">RS {item.totalCost.toFixed(2)}</td>
                           <td className="py-2 px-2 text-right">
-                            <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(index)}>
+                            <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(index)} disabled={isSubmitting}>
                               Remove
                             </Button>
                           </td>
@@ -490,6 +578,7 @@ function PurchaseContent() {
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add any notes about this purchase..."
                 rows={3}
+                disabled={isSubmitting}
               />
             </Card>
 
@@ -506,14 +595,24 @@ function PurchaseContent() {
             )}
 
             {/* Submit Button */}
-            <Button onClick={handleSubmitPurchase} className="w-full" size="lg" disabled={cart.length === 0}>
-              Complete Purchase
+            <Button 
+              onClick={handleSubmitPurchase} 
+              className="w-full" 
+              size="lg" 
+              disabled={cart.length === 0 || isSubmitting}
+            >
+              {isSubmitting ? "Processing Purchase..." : "Complete Purchase"}
             </Button>
           </>
         ) : (
           /* Purchase History */
           <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Purchase History</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Purchase History</h2>
+              <Button onClick={exportPurchasesToPDF} disabled={purchases.length === 0}>
+                Export PDF
+              </Button>
+            </div>
             {purchases.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No purchases recorded yet</div>
             ) : (

@@ -19,6 +19,7 @@ export interface Item {
   quantity: number
   sku: string
   description: string
+  vendor?: string
   createdAt: any
   createdBy: string
   updatedAt: any

@@ -282,24 +282,24 @@ function DashboardContent() {
               {filteredSales.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No sales found matching filters</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
                         <th className="text-left py-2 px-2">Date</th>
-                        <th className="text-left py-2 px-2">Type</th>
+                    <th className="text-left py-2 px-2">Type</th>
                         <th className="text-left py-2 px-2">Description</th>
                         <th className="text-left py-2 px-2">Payment</th>
-                        <th className="text-right py-2 px-2">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                    <th className="text-right py-2 px-2">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
                       {filteredSales.map((sale) => {
                         const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
                         const itemsDescription = sale.items?.map((item: any) => `${item.itemName} (${item.quantity})`).join(", ") || "No items"
                         
                         return (
-                          <tr key={sale.id} className="border-b border-border hover:bg-muted">
+                    <tr key={sale.id} className="border-b border-border hover:bg-muted">
                             <td className="py-2 px-2 whitespace-nowrap">
                               {saleDate.toLocaleDateString('en-GB', { 
                                 day: '2-digit', 
@@ -307,16 +307,16 @@ function DashboardContent() {
                                 year: 'numeric' 
                               })}
                             </td>
-                            <td className="py-2 px-2">
-                              <span
-                                className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
-                                    ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                                    : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                  }`}
-                              >
-                                {sale.type}
-                              </span>
-                            </td>
+                      <td className="py-2 px-2">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                              : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                            }`}
+                        >
+                          {sale.type}
+                        </span>
+                      </td>
                             <td className="py-2 px-2 max-w-xs">
                               <div className="truncate" title={itemsDescription}>
                                 {itemsDescription}
@@ -335,15 +335,15 @@ function DashboardContent() {
                                 <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </td>
-                            <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
-                          </tr>
+                      <td className="py-2 px-2 text-right font-semibold">RS {(sale.totalAmount || 0).toFixed(2)}</td>
+                    </tr>
                         )
                       })}
-                    </tbody>
-                  </table>
-                </div>
+                </tbody>
+              </table>
+            </div>
               )}
-            </Card>
+          </Card>
           </div>
 
           <Card className="p-6">

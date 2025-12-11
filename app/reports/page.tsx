@@ -20,6 +20,8 @@ import {
   Cell,
 } from "recharts"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 function ReportsContent() {
   const [sales, setSales] = useState<any[]>([])
@@ -110,6 +112,116 @@ function ReportsContent() {
     { name: "Wholesale", value: wholesaleCount, fill: "#3b82f6" },
   ]
 
+  const exportReportToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Sales Report & Analysis", 14, 22)
+    
+    // Add date range and filters
+    doc.setFontSize(10)
+    if (dateFilter.start && dateFilter.end) {
+      doc.text(
+        `Report Period: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
+        14,
+        30
+      )
+    } else {
+      doc.text(
+        `Report Period: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`,
+        14,
+        30
+      )
+    }
+    
+    if (filterType !== "all") {
+      doc.text(`Sale Type: ${filterType.toUpperCase()}`, 14, 36)
+    }
+    
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, filterType !== "all" ? 42 : 36)
+    
+    // Add summary statistics
+    doc.setFontSize(14)
+    const statsY = filterType !== "all" ? 52 : 46
+    doc.text("Summary Statistics", 14, statsY)
+    
+    doc.setFontSize(10)
+    doc.text(`Total Revenue: RS ${totalRevenue.toFixed(2)}`, 14, statsY + 8)
+    doc.text(`Total Transactions: ${totalTransactions}`, 14, statsY + 14)
+    doc.text(`Average Transaction: RS ${avgTransaction.toFixed(2)}`, 14, statsY + 20)
+    doc.text(`Retail Sales: ${retailCount} (${((retailCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 26)
+    doc.text(`Wholesale Sales: ${wholesaleCount} (${((wholesaleCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 32)
+    
+    // Add sales table
+    doc.setFontSize(12)
+    doc.text("Sales Transactions", 14, statsY + 42)
+    
+    const tableData = filteredSales.map((sale) => {
+      const date = sale.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"
+      
+      const itemsList = sale.items?.map((item: any) => 
+        `${item.name} (x${item.quantity})`
+      ).join(", ") || "No items"
+      
+      let paymentInfo = ""
+      if (sale.paymentMethod) {
+        if (sale.paymentMethod.cash && sale.paymentMethod.credit) {
+          paymentInfo = `Cash: RS ${(sale.paymentMethod.cashAmount || 0).toFixed(2)}\nCredit: RS ${(sale.paymentMethod.creditAmount || 0).toFixed(2)}`
+        } else if (sale.paymentMethod.cash) {
+          paymentInfo = "Cash"
+        } else if (sale.paymentMethod.credit) {
+          paymentInfo = "Credit"
+        }
+      } else {
+        paymentInfo = "N/A"
+      }
+      
+      return [
+        date,
+        sale.type?.toUpperCase() || "N/A",
+        itemsList,
+        paymentInfo,
+        `RS ${(sale.totalAmount || 0).toFixed(2)}`
+      ]
+    })
+    
+    autoTable(doc, {
+      startY: statsY + 48,
+      head: [["Date", "Type", "Items", "Payment", "Amount"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 60 },
+        3: { cellWidth: 35 },
+        4: { cellWidth: 25 }
+      }
+    })
+    
+    // Add daily revenue breakdown
+    const finalY = (doc as any).lastAutoTable.finalY || statsY + 48
+    if (finalY < 250) {
+      doc.setFontSize(12)
+      doc.text("Daily Revenue Breakdown", 14, finalY + 10)
+      
+      doc.setFontSize(9)
+      let yPos = finalY + 16
+      chartData.slice(0, 10).forEach((item) => {
+        doc.text(`${item.date}: RS ${item.revenue.toFixed(2)}`, 14, yPos)
+        yPos += 6
+        if (yPos > 280) return // Prevent overflow
+      })
+    }
+    
+    // Save PDF
+    const fileName = `sales-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
+  }
+
   return (
     <>
       <Navbar />
@@ -124,7 +236,7 @@ function ReportsContent() {
 
         {/* Additional Filters */}
         <Card className="p-4 mb-6">
-          <div className="flex items-center gap-4">
+          <div className="flex  gap-4">
             <div className="flex-1">
               <label className="block text-sm font-medium mb-2">Sale Type</label>
               <select
@@ -136,6 +248,11 @@ function ReportsContent() {
                 <option value="retail">Retail Only</option>
                 <option value="wholesale">Wholesale Only</option>
               </select>
+            </div>
+            <div className="flex items-end">
+              <Button onClick={exportReportToPDF} disabled={filteredSales.length === 0}>
+                Export PDF
+              </Button>
             </div>
           </div>
         </Card>

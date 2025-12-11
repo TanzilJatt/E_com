@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input"
 import { createSale, getSales, type SaleItem, type Sale } from "@/lib/sales"
 import type { Item } from "@/lib/items"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 function SalesContent() {
   // View state
@@ -190,7 +192,7 @@ function SalesContent() {
     } else {
       totalPrice = qty * effectiveCreditPrice
     }
-    
+
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
       if (existingItem.quantity + qty > item.quantity) {
@@ -351,6 +353,98 @@ function SalesContent() {
     setDateFilter({ start, end })
   }
 
+  const exportSalesToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Sales Report", 14, 22)
+    
+    // Add date range if filtered
+    doc.setFontSize(10)
+    if (dateFilter.start && dateFilter.end) {
+      doc.text(
+        `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
+        14,
+        30
+      )
+    } else {
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    }
+    
+    // Add filter info
+    let filterInfo = []
+    if (saleTypeFilter !== "all") filterInfo.push(`Type: ${saleTypeFilter}`)
+    if (paymentMethodFilter !== "all") filterInfo.push(`Payment: ${paymentMethodFilter}`)
+    if (searchTerm) filterInfo.push(`Search: "${searchTerm}"`)
+    if (filterInfo.length > 0) {
+      doc.text(`Filters: ${filterInfo.join(", ")}`, 14, 36)
+    }
+    
+    // Prepare table data
+    const tableData = filteredSales.map((sale) => {
+      const date = sale.transactionDate?.toDate 
+        ? new Date(sale.transactionDate.toDate()).toLocaleDateString()
+        : new Date(sale.transactionDate).toLocaleDateString()
+      
+      const itemsList = sale.items.map((item) => {
+        const prices = []
+        if (item.cashPrice) prices.push(`Cash: RS ${item.cashPrice.toFixed(2)}`)
+        if (item.creditPrice) prices.push(`Credit: RS ${item.creditPrice.toFixed(2)}`)
+        return `${item.name} (x${item.quantity}) - ${prices.join(", ")}`
+      }).join("\n")
+      
+      let paymentInfo = ""
+      if (sale.paymentMethod) {
+        if (sale.paymentMethod.cash && sale.paymentMethod.credit) {
+          paymentInfo = `Cash: RS ${(sale.paymentMethod.cashAmount || 0).toFixed(2)}\nCredit: RS ${(sale.paymentMethod.creditAmount || 0).toFixed(2)}`
+        } else if (sale.paymentMethod.cash) {
+          paymentInfo = "Cash"
+        } else if (sale.paymentMethod.credit) {
+          paymentInfo = "Credit"
+        }
+      }
+      
+      return [
+        `#${sale.id.slice(0, 8)}`,
+        date,
+        sale.type.toUpperCase(),
+        itemsList,
+        paymentInfo,
+        `RS ${sale.totalAmount.toFixed(2)}`
+      ]
+    })
+    
+    // Add table
+    autoTable(doc, {
+      startY: filterInfo.length > 0 ? 42 : 36,
+      head: [["ID", "Date", "Type", "Items", "Payment", "Total"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 60 },
+        4: { cellWidth: 30 },
+        5: { cellWidth: 25 }
+      }
+    })
+    
+    // Add summary
+    const finalY = (doc as any).lastAutoTable.finalY || 42
+    doc.setFontSize(12)
+    doc.text(`Total Sales: ${filteredSales.length}`, 14, finalY + 10)
+    const totalAmount = filteredSales.reduce((sum, sale) => sum + sale.totalAmount, 0)
+    doc.text(`Grand Total: RS ${totalAmount.toFixed(2)}`, 14, finalY + 18)
+    
+    // Save PDF
+    const fileName = `sales-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
+  }
+
   if (!authReady) {
     return (
       <>
@@ -492,14 +586,14 @@ function SalesContent() {
                     <label className="block text-sm font-medium mb-1">
                       Credit Price {cashPrice === "" && creditPrice === "" && <span className="text-red-500">*</span>}
                     </label>
-                    <Input
-                      type="number"
+                  <Input
+                    type="number"
                       min="0"
                       step="0.01"
                       placeholder="00.0"
                       value={creditPrice === "" ? "" : creditPrice}
                       onChange={(e) => setCreditPrice(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
-                    />
+                  />
                   </div>
                 </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}
@@ -532,7 +626,7 @@ function SalesContent() {
                         {item.creditPrice !== undefined && (
                           <p className="text-xs text-blue-600 dark:text-blue-400">
                             Credit: RS {item.creditPrice.toFixed(2)} × {item.quantity} = RS {(item.creditPrice * item.quantity).toFixed(2)}
-                          </p>
+                        </p>
                         )}
                       </div>
                       <Button
@@ -686,8 +780,13 @@ function SalesContent() {
             <Card className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Sales List</h2>
-                <div className="text-sm text-muted-foreground">
-                  Showing {filteredSales.length} of {sales.length} sales
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {filteredSales.length} of {sales.length} sales
+                  </div>
+                  <Button onClick={exportSalesToPDF} disabled={filteredSales.length === 0}>
+                    Export PDF
+                  </Button>
                 </div>
               </div>
 

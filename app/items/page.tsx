@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 function ItemsContent() {
   const [items, setItems] = useState<Item[]>([])
@@ -26,6 +28,7 @@ function ItemsContent() {
     price: 0,
     quantity: 0,
     description: "",
+    vendor: "",
   })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
@@ -115,11 +118,6 @@ function ItemsContent() {
         return
       }
 
-      if (editingId && false) {
-        setError(`SKU "${formData.sku}" already exists. Please use a different SKU.`)
-        setIsSubmitting(false)
-        return
-      }
 
       if (editingId) {
         await updateItem(editingId, formData, auth?.currentUser?.uid || "system")
@@ -127,14 +125,14 @@ function ItemsContent() {
         await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
-      setFormData({ name: "", price: 0, quantity: 0, description: "" })
+      setFormData({ name: "", price: 0, quantity: 0, description: "", vendor: "" })
       setEditingId(null)
       setIsAdding(false)
       setError("")
       await fetchItems()
     } catch (err: any) {
       console.error("[v0] Error:", err.message)
-      setError(err.message || "Failed to save item")
+        setError(err.message || "Failed to save item")
     } finally {
       setIsSubmitting(false)
     }
@@ -146,6 +144,7 @@ function ItemsContent() {
       price: item.price,
       quantity: item.quantity,
       description: item.description,
+      vendor: item.vendor || "",
     })
     setEditingId(item.id)
     setIsAdding(true)
@@ -164,10 +163,85 @@ function ItemsContent() {
     }
   }
 
+  const exportItemsToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Inventory Report", 14, 22)
+    
+    // Add date and filter info
+    doc.setFontSize(10)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    
+    if (dateFilter.start && dateFilter.end) {
+      doc.text(
+        `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
+        14,
+        36
+      )
+    }
+    
+    if (searchTerm) {
+      doc.text(`Search: "${searchTerm}"`, 14, dateFilter.start && dateFilter.end ? 42 : 36)
+    }
+    
+    // Prepare table data
+    const tableData = filteredItems.map((item) => {
+      const createdDate = item.createdAt?.toDate?.()
+        ? new Date(item.createdAt.toDate()).toLocaleDateString()
+        : "N/A"
+      
+      return [
+        item.sku,
+        item.name,
+        item.vendor || "-",
+        item.description || "-",
+        `RS ${item.price.toFixed(2)}`,
+        item.quantity.toString(),
+        `RS ${(item.price * item.quantity).toFixed(2)}`
+      ]
+    })
+    
+    // Add table
+    const startY = searchTerm ? (dateFilter.start && dateFilter.end ? 48 : 42) : (dateFilter.start && dateFilter.end ? 42 : 36)
+    autoTable(doc, {
+      startY,
+      head: [["SKU", "Item Name", "Vendor", "Description", "Price", "Quantity", "Total Value"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 40 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 25 }
+      }
+    })
+    
+    // Add summary
+    const finalY = (doc as any).lastAutoTable.finalY || startY
+    doc.setFontSize(12)
+    doc.text(`Total Items: ${filteredItems.length}`, 14, finalY + 10)
+    const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
+    doc.text(`Total Quantity: ${totalQuantity} units`, 14, finalY + 18)
+    const totalValue = filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    doc.text(`Total Inventory Value: RS ${totalValue.toFixed(2)}`, 14, finalY + 26)
+    
+    // Save PDF
+    const fileName = `inventory-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
+  }
+
   const filteredItems = items.filter(
     (item) =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase()),
+      item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.vendor && item.vendor.toLowerCase().includes(searchTerm.toLowerCase())),
   )
 
   return (
@@ -197,13 +271,13 @@ function ItemsContent() {
                 />
               </div>
               {editingId && (
-                <div>
+              <div>
                   <label className="block text-sm font-medium mb-1">SKU</label>
                   <div className="px-3 py-2 bg-muted text-muted-foreground rounded-lg border-2 border-border/60">
                     {items.find(i => i.id === editingId)?.sku || "Auto-generated"}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">SKU is auto-generated and cannot be changed</p>
-                </div>
+              </div>
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">Price (RS) *</label>
@@ -228,6 +302,15 @@ function ItemsContent() {
                   required
                 />
               </div>
+              <div >
+                <label className="block text-sm font-medium mb-1">Vendor Name</label>
+                <Input
+                  type="text"
+                  placeholder={formData.vendor ? "" : "Vendor or supplier name"}
+                  value={formData.vendor}
+                  onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Description</label>
                 <textarea
@@ -248,7 +331,7 @@ function ItemsContent() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setFormData({ name: "", price: 0, quantity: 0, sku: "", description: "" })
+                    setFormData({ name: "", price: 0, quantity: 0, description: "", vendor: "" })
                     setEditingId(null)
                     setIsAdding(false)
                     setError("")
@@ -267,14 +350,17 @@ function ItemsContent() {
         <DateFilter onFilter={handleDateFilter} />
 
         {/* Search */}
-        <div className="mb-6">
+        <div className="mb-6 flex gap-4 items-center">
           <Input
             type="text"
-            placeholder="Search by name or SKU..."
+            placeholder="Search by name, SKU, or vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="max-w-md"
           />
+          <Button onClick={exportItemsToPDF} disabled={filteredItems.length === 0}>
+            Export PDF
+          </Button>
         </div>
 
         {/* Items Table */}
@@ -298,6 +384,7 @@ function ItemsContent() {
                   <tr className="border-b border-border">
                     <th className="text-left py-3 px-4 font-semibold text-sm">SKU</th>
                     <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
                     <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
                     <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
                     <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
@@ -320,6 +407,11 @@ function ItemsContent() {
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-medium">{item.name}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="text-sm text-muted-foreground">
+                          {item.vendor || "—"}
+                        </span>
                       </td>
                       <td className="py-3 px-4 max-w-xs">
                         <span className="text-sm text-muted-foreground line-clamp-2">
@@ -376,7 +468,7 @@ function ItemsContent() {
                 </tbody>
                 <tfoot className="bg-muted/30 border-t-2 border-border">
                   <tr>
-                    <td colSpan={3} className="py-3 px-4 font-semibold">
+                    <td colSpan={4} className="py-3 px-4 font-semibold">
                       Total ({filteredItems.length} items)
                     </td>
                     <td className="py-3 px-4 text-right font-semibold">

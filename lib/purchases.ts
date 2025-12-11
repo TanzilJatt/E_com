@@ -1,5 +1,5 @@
 import { db } from "./firebase"
-import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, Timestamp } from "firebase/firestore"
+import { collection, addDoc, getDocs, getDoc, doc, updateDoc, query, where, orderBy, serverTimestamp, Timestamp, increment } from "firebase/firestore"
 
 export interface PurchaseItem {
   itemId: string
@@ -47,6 +47,28 @@ export async function createPurchase(
   }
 ): Promise<string> {
   try {
+    // First, update inventory quantities for all items
+    for (const item of purchaseData.items) {
+      const itemRef = doc(db, "items", item.itemId)
+      
+      // Get current item to update SKU in purchase record
+      const itemDoc = await getDoc(itemRef)
+      if (itemDoc.exists()) {
+        // Update quantity using increment
+        await updateDoc(itemRef, {
+          quantity: increment(item.quantity),
+          updatedAt: serverTimestamp(),
+          updatedBy: userId,
+        })
+        
+        // Update SKU in the purchase item if it was auto-generated
+        if (item.sku === "Auto-generated") {
+          item.sku = itemDoc.data().sku || "Auto-generated"
+        }
+      }
+    }
+
+    // Create purchase record
     const purchaseRef = await addDoc(collection(db, "purchases"), {
       userId,
       supplierName: purchaseData.supplierName,

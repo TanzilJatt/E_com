@@ -19,6 +19,8 @@ import {
 } from "@/lib/expenses"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Supplies", "Marketing", "Salaries", "Shipping", "Equipment", "Other"]
 const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"]
@@ -169,6 +171,92 @@ function ExpensesContent() {
 
     return matchesSearch && matchesCategory
   })
+
+  const exportExpensesToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Expenses Report", 14, 22)
+    
+    // Add date range and filters
+    doc.setFontSize(10)
+    if (dateFilter.start && dateFilter.end) {
+      doc.text(
+        `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
+        14,
+        30
+      )
+    } else {
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    }
+    
+    // Add filter info
+    let filterInfo = []
+    if (selectedCategory !== "All") filterInfo.push(`Category: ${selectedCategory}`)
+    if (searchTerm) filterInfo.push(`Search: "${searchTerm}"`)
+    if (filterInfo.length > 0) {
+      doc.text(`Filters: ${filterInfo.join(", ")}`, 14, dateFilter.start && dateFilter.end ? 36 : 36)
+    }
+    
+    // Prepare table data
+    const tableData = filteredExpenses.map((expense) => {
+      const date = expense.date?.toDate 
+        ? new Date(expense.date.toDate()).toLocaleDateString()
+        : new Date(expense.date).toLocaleDateString()
+      
+      return [
+        date,
+        expense.name,
+        expense.category,
+        expense.description || "-",
+        `RS ${expense.amount.toFixed(2)}`
+      ]
+    })
+    
+    // Add table
+    const startY = filterInfo.length > 0 ? 42 : (dateFilter.start && dateFilter.end ? 36 : 36)
+    autoTable(doc, {
+      startY,
+      head: [["Date", "Name", "Category", "Description", "Amount"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 60 },
+        4: { cellWidth: 25 }
+      }
+    })
+    
+    // Add summary with category breakdown
+    const finalY = (doc as any).lastAutoTable.finalY || startY
+    doc.setFontSize(12)
+    doc.text(`Total Expenses: ${filteredExpenses.length}`, 14, finalY + 10)
+    const totalAmount = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+    doc.text(`Total Amount: RS ${totalAmount.toFixed(2)}`, 14, finalY + 18)
+    
+    // Add category breakdown
+    doc.setFontSize(10)
+    doc.text("Category Breakdown:", 14, finalY + 28)
+    const categoryTotals: Record<string, number> = {}
+    filteredExpenses.forEach((expense) => {
+      categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.amount
+    })
+    
+    let yPos = finalY + 34
+    Object.entries(categoryTotals).forEach(([category, amount]) => {
+      doc.text(`${category}: RS ${amount.toFixed(2)}`, 20, yPos)
+      yPos += 6
+    })
+    
+    // Save PDF
+    const fileName = `expenses-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
+  }
 
   const chartData = EXPENSE_CATEGORIES.map((cat) => ({
     name: cat,
@@ -340,7 +428,7 @@ function ExpensesContent() {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-4 mb-6 flex-wrap">
+        <div className="flex gap-4 mb-6 flex-wrap items-center">
           <Input
             type="text"
             placeholder="Search by name or description..."
@@ -360,6 +448,9 @@ function ExpensesContent() {
               </option>
             ))}
           </select>
+          <Button onClick={exportExpensesToPDF} disabled={filteredExpenses.length === 0}>
+            Export PDF
+          </Button>
         </div>
 
         {/* Expenses List */}
