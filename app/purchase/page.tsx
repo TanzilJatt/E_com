@@ -15,16 +15,21 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
 type PurchaseMode = "existing" | "new"
+type PricingType = "unit" | "bulk"
 
-interface CartItem extends PurchaseItem {}
+interface CartItem extends PurchaseItem {
+  pricingType?: PricingType
+  bulkPrice?: number
+}
 
 interface NewItemForm {
   itemName: string
-  quantity: number
-  unitCost: number
-  price: number
+  quantity: string
+  unitCost: string
+  bulkPrice: string
   description: string
   vendor: string
+  pricingType: PricingType
 }
 
 function PurchaseContent() {
@@ -48,15 +53,18 @@ function PurchaseContent() {
   const [selectedItem, setSelectedItem] = useState<string>("")
   const [quantity, setQuantity] = useState("")
   const [unitCost, setUnitCost] = useState("")
+  const [bulkPrice, setBulkPrice] = useState("")
+  const [existingItemPricingType, setExistingItemPricingType] = useState<PricingType>("unit")
 
   // New item form
   const [newItem, setNewItem] = useState<NewItemForm>({
     itemName: "",
-    quantity: 1,
-    unitCost: 0,
-    price: 0,
+    quantity: "",
+    unitCost: "",
+    bulkPrice: "",
     description: "",
     vendor: "",
+    pricingType: "unit",
   })
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -104,8 +112,18 @@ function PurchaseContent() {
   }
 
   const handleAddExistingItem = () => {
-    if (!selectedItem || !quantity || !unitCost) {
+    if (!selectedItem || !quantity) {
       setError("Please fill all fields")
+      return
+    }
+
+    if (existingItemPricingType === "unit" && !unitCost) {
+      setError("Please enter unit cost")
+      return
+    }
+
+    if (existingItemPricingType === "bulk" && !bulkPrice) {
+      setError("Please enter bulk price (12 items)")
       return
     }
 
@@ -116,7 +134,18 @@ function PurchaseContent() {
     }
 
     const qty = parseInt(quantity)
-    const cost = parseFloat(unitCost)
+    let cost: number
+    let totalCost: number
+
+    if (existingItemPricingType === "unit") {
+      cost = parseFloat(unitCost)
+      totalCost = qty * cost
+    } else {
+      // Bulk pricing - price is for 12 items
+      const bulk = parseFloat(bulkPrice)
+      cost = bulk / 12 // Calculate per unit cost
+      totalCost = (qty / 12) * bulk // Calculate total based on bulk units
+    }
 
     const cartItem: CartItem = {
       itemId: item.id,
@@ -124,31 +153,56 @@ function PurchaseContent() {
       sku: item.sku,
       quantity: qty,
       unitCost: cost,
-      totalCost: qty * cost,
+      totalCost: totalCost,
+      pricingType: existingItemPricingType,
+      bulkPrice: existingItemPricingType === "bulk" ? parseFloat(bulkPrice) : undefined,
     }
 
     setCart([...cart, cartItem])
     setSelectedItem("")
     setQuantity("")
     setUnitCost("")
+    setBulkPrice("")
     setError("")
   }
 
   const handleAddNewItem = async () => {
     if (!userId) return
 
-    if (!newItem.itemName || newItem.quantity <= 0 || newItem.unitCost <= 0 || newItem.price <= 0) {
+    const qty = parseFloat(newItem.quantity)
+    const unitCostValue = parseFloat(newItem.unitCost)
+    const bulkPriceValue = parseFloat(newItem.bulkPrice)
+
+    if (!newItem.itemName || !newItem.quantity || qty <= 0) {
       setError("Please fill all required fields")
       return
     }
 
+    if (newItem.pricingType === "unit" && (!newItem.unitCost || unitCostValue <= 0)) {
+      setError("Please enter unit cost")
+      return
+    }
+
+    if (newItem.pricingType === "bulk" && (!newItem.bulkPrice || bulkPriceValue <= 0)) {
+      setError("Please enter bulk price (12 items)")
+      return
+    }
+
     try {
+      // Calculate cost based on pricing type for the selling price
+      let sellingPrice: number
+      if (newItem.pricingType === "unit") {
+        sellingPrice = unitCostValue * 1.2 // 20% markup as default
+      } else {
+        sellingPrice = (bulkPriceValue / 12) * 1.2 // 20% markup on per-unit cost
+      }
+
       // Create the new item in inventory
       const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
       const itemId = await addItem(
         {
           name: newItem.itemName,
-          price: newItem.price,
+          price: sellingPrice,
           quantity: 0, // Initial quantity is 0, will be updated after purchase
           description: newItem.description,
           vendor: newItem.vendor,
@@ -161,14 +215,29 @@ function PurchaseContent() {
         throw new Error("Failed to create item")
       }
 
+      // Calculate cost based on pricing type
+      let cost: number
+      let totalCost: number
+
+      if (newItem.pricingType === "unit") {
+        cost = unitCostValue
+        totalCost = qty * cost
+      } else {
+        // Bulk pricing - price is for 12 items
+        cost = bulkPriceValue / 12 // Calculate per unit cost
+        totalCost = (qty / 12) * bulkPriceValue // Calculate total based on bulk units
+      }
+
       // Add to cart with auto-generated SKU
       const cartItem: CartItem = {
         itemId: itemId,
         itemName: newItem.itemName,
         sku: "Auto-generated", // Will be replaced with actual SKU
-        quantity: newItem.quantity,
-        unitCost: newItem.unitCost,
-        totalCost: newItem.quantity * newItem.unitCost,
+        quantity: qty,
+        unitCost: cost,
+        totalCost: totalCost,
+        pricingType: newItem.pricingType,
+        bulkPrice: newItem.pricingType === "bulk" ? bulkPriceValue : undefined,
       }
 
       setCart([...cart, cartItem])
@@ -176,11 +245,12 @@ function PurchaseContent() {
       // Reset form
       setNewItem({
         itemName: "",
-        quantity: 1,
-        unitCost: 0,
-        price: 0,
+        quantity: "",
+        unitCost: "",
+        bulkPrice: "",
         description: "",
         vendor: "",
+        pricingType: "unit",
       })
 
       setSuccess("New item added to cart and inventory!")
@@ -386,7 +456,7 @@ function PurchaseContent() {
                   <Input
                     value={supplierName}
                     onChange={(e) => setSupplierName(e.target.value)}
-                    placeholder="Enter supplier name"
+                    placeholder={supplierName ? "" : "Enter supplier name"}
                     disabled={isSubmitting}
                   />
                 </div>
@@ -395,7 +465,7 @@ function PurchaseContent() {
                   <Input
                     value={supplierContact}
                     onChange={(e) => setSupplierContact(e.target.value)}
-                    placeholder="Phone or email"
+                    placeholder={supplierContact ? "" : "Phone or email"}
                     disabled={isSubmitting}
                   />
                 </div>
@@ -406,6 +476,30 @@ function PurchaseContent() {
             {mode === "existing" ? (
               <Card className="p-6 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Add Existing Items to Purchase</h2>
+                
+                {/* Pricing Type Selector */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-2">Pricing Type</label>
+                  <div className="flex gap-4">
+                    <Button
+                      type="button"
+                      variant={existingItemPricingType === "unit" ? "default" : "outline"}
+                      onClick={() => setExistingItemPricingType("unit")}
+                      disabled={isSubmitting}
+                    >
+                      Unit Price (1 item)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={existingItemPricingType === "bulk" ? "default" : "outline"}
+                      onClick={() => setExistingItemPricingType("bulk")}
+                      disabled={isSubmitting}
+                    >
+                      Bulk Price (12 items)
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium mb-2">Select Item</label>
@@ -413,6 +507,7 @@ function PurchaseContent() {
                       value={selectedItem}
                       onChange={(e) => setSelectedItem(e.target.value)}
                       className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                      disabled={isSubmitting}
                     >
                       <option value="">-- Select an item --</option>
                       {items.map((item) => (
@@ -425,24 +520,49 @@ function PurchaseContent() {
                   <div>
                     <label className="block text-sm font-medium mb-2">Quantity</label>
                     <Input
-                      type="number"
+                      type="text"
                       value={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
-                      placeholder="1"
-                      min="1"
+                      onFocus={(e) => e.target.select()}
+                      placeholder={quantity ? "" : "0.00"}
+                      disabled={isSubmitting}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Unit Cost (RS)</label>
-                    <Input
-                      type="number"
-                      value={unitCost}
-                      onChange={(e) => setUnitCost(e.target.value)}
-                      placeholder="00.0"
-                      step="0.01"
-                    />
-                  </div>
+                  {existingItemPricingType === "unit" ? (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Unit Cost (RS)</label>
+                      <Input
+                        type="text"
+                        value={unitCost}
+                        onChange={(e) => setUnitCost(e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        placeholder={unitCost ? "" : "0.00"}
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS)</label>
+                      <Input
+                        type="text"
+                        value={bulkPrice}
+                        onChange={(e) => setBulkPrice(e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        placeholder={bulkPrice ? "" : "0.00"}
+                        disabled={isSubmitting}
+                      />
+                    </div>
+                  )}
                 </div>
+                
+                {existingItemPricingType === "bulk" && (
+                  <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <p className="text-sm text-blue-800 dark:text-blue-300">
+                      ℹ️ <strong>Bulk Pricing:</strong> Enter the total price for 12 items. The system will automatically calculate the per-unit cost.
+                    </p>
+                  </div>
+                )}
+
                 <Button onClick={handleAddExistingItem} className="mt-4" disabled={isSubmitting}>
                   Add to Cart
                 </Button>
@@ -451,56 +571,93 @@ function PurchaseContent() {
               <Card className="p-6 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Add New Item to Inventory</h2>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Item Name *</label>
-                      <Input
-                        value={newItem.itemName}
-                        onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
-                        placeholder="Enter item name"
-                      />
+                  {/* Pricing Type Selector */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Pricing Type</label>
+                    <div className="flex gap-4">
+                      <Button
+                        type="button"
+                        variant={newItem.pricingType === "unit" ? "default" : "outline"}
+                        onClick={() => setNewItem({ ...newItem, pricingType: "unit" })}
+                        disabled={isSubmitting}
+                      >
+                        Unit Price (1 item)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={newItem.pricingType === "bulk" ? "default" : "outline"}
+                        onClick={() => setNewItem({ ...newItem, pricingType: "bulk" })}
+                        disabled={isSubmitting}
+                      >
+                        Bulk Price (12 items)
+                      </Button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Selling Price (RS) *</label>
-                      <Input
-                        type="number"
-                        value={newItem.price}
-                        onChange={(e) => setNewItem({ ...newItem, price: parseFloat(e.target.value) || 0 })}
-                        placeholder="00.0"
-                        step="0.01"
-                      />
-                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Item Name *</label>
+                    <Input
+                      value={newItem.itemName}
+                      onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
+                      placeholder={newItem.itemName ? "" : "Enter item name"}
+                      disabled={isSubmitting}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">Purchase Quantity *</label>
                       <Input
-                        type="number"
+                        type="text"
                         value={newItem.quantity}
-                        onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 0 })}
-                        placeholder="1"
-                        min="1"
+                        onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
+                        onFocus={(e) => e.target.select()}
+                        placeholder={newItem.quantity ? "" : "0.00"}
+                        disabled={isSubmitting}
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Unit Cost (RS) *</label>
-                      <Input
-                        type="number"
-                        value={newItem.unitCost}
-                        onChange={(e) => setNewItem({ ...newItem, unitCost: parseFloat(e.target.value) || 0 })}
-                        placeholder="00.0"
-                        step="0.01"
-                      />
-                    </div>
+                    {newItem.pricingType === "unit" ? (
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Unit Cost (RS) *</label>
+                        <Input
+                          type="text"
+                          value={newItem.unitCost}
+                          onChange={(e) => setNewItem({ ...newItem, unitCost: e.target.value })}
+                          onFocus={(e) => e.target.select()}
+                          placeholder={newItem.unitCost ? "" : "0.00"}
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) *</label>
+                        <Input
+                          type="text"
+                          value={newItem.bulkPrice}
+                          onChange={(e) => setNewItem({ ...newItem, bulkPrice: e.target.value })}
+                          onFocus={(e) => e.target.select()}
+                          placeholder={newItem.bulkPrice ? "" : "0.00"}
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                    )}
                   </div>
+
+                  {newItem.pricingType === "bulk" && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        ℹ️ <strong>Bulk Pricing:</strong> Enter the total price for 12 items. The system will automatically calculate the per-unit cost.
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium mb-2">Vendor Name (Optional)</label>
                     <Input
                       value={newItem.vendor}
                       onChange={(e) => setNewItem({ ...newItem, vendor: e.target.value })}
-                      placeholder="Enter vendor or supplier name"
+                      placeholder={newItem.vendor ? "" : "Enter vendor or supplier name"}
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -509,8 +666,9 @@ function PurchaseContent() {
                     <Textarea
                       value={newItem.description}
                       onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                      placeholder="Enter item description..."
+                      placeholder={newItem.description ? "" : "Enter item description..."}
                       rows={3}
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -536,6 +694,7 @@ function PurchaseContent() {
                       <tr className="border-b border-border">
                         <th className="text-left py-2 px-2">Item</th>
                         <th className="text-left py-2 px-2">SKU</th>
+                        <th className="text-center py-2 px-2">Pricing</th>
                         <th className="text-right py-2 px-2">Qty</th>
                         <th className="text-right py-2 px-2">Unit Cost</th>
                         <th className="text-right py-2 px-2">Total</th>
@@ -547,6 +706,20 @@ function PurchaseContent() {
                         <tr key={index} className="border-b border-border">
                           <td className="py-2 px-2">{item.itemName}</td>
                           <td className="py-2 px-2 text-xs font-mono">{item.sku}</td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              item.pricingType === "bulk"
+                                ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                                : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            }`}>
+                              {item.pricingType === "bulk" ? "Bulk (12)" : "Unit"}
+                            </span>
+                            {item.pricingType === "bulk" && item.bulkPrice && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                RS {item.bulkPrice.toFixed(2)}/12
+                              </div>
+                            )}
+                          </td>
                           <td className="py-2 px-2 text-right">{item.quantity}</td>
                           <td className="py-2 px-2 text-right">RS {item.unitCost.toFixed(2)}</td>
                           <td className="py-2 px-2 text-right font-semibold">RS {item.totalCost.toFixed(2)}</td>
@@ -558,7 +731,7 @@ function PurchaseContent() {
                         </tr>
                       ))}
                       <tr className="font-bold">
-                        <td colSpan={4} className="py-3 px-2 text-right">
+                        <td colSpan={5} className="py-3 px-2 text-right">
                           Total Amount:
                         </td>
                         <td className="py-3 px-2 text-right text-lg">RS {calculateTotal().toFixed(2)}</td>
@@ -576,7 +749,7 @@ function PurchaseContent() {
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add any notes about this purchase..."
+                placeholder={notes ? "" : "Add any notes about this purchase..."}
                 rows={3}
                 disabled={isSubmitting}
               />
