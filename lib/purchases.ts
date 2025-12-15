@@ -70,17 +70,44 @@ export async function createPurchase(
       }
     }
 
-    // Create purchase record
-    const purchaseRef = await addDoc(collection(db, "purchases"), {
+    // Clean items data - remove undefined values
+    const cleanedItems = purchaseData.items.map(item => {
+      const cleanItem: any = {
+        itemId: item.itemId,
+        itemName: item.itemName,
+        sku: item.sku,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        totalCost: item.totalCost,
+      }
+      if (item.pricingType !== undefined) {
+        cleanItem.pricingType = item.pricingType
+      }
+      if (item.bulkPrice !== undefined) {
+        cleanItem.bulkPrice = item.bulkPrice
+      }
+      return cleanItem
+    })
+
+    // Create purchase record with cleaned data
+    const purchaseDoc: any = {
       userId,
       supplierName: purchaseData.supplierName,
-      supplierContact: purchaseData.supplierContact || "",
-      items: purchaseData.items,
+      items: cleanedItems,
       totalAmount: purchaseData.totalAmount,
-      notes: purchaseData.notes || "",
       purchaseDate: serverTimestamp(),
       createdAt: serverTimestamp(),
-    })
+    }
+
+    // Add optional fields if they have values
+    if (purchaseData.supplierContact) {
+      purchaseDoc.supplierContact = purchaseData.supplierContact
+    }
+    if (purchaseData.notes) {
+      purchaseDoc.notes = purchaseData.notes
+    }
+
+    const purchaseRef = await addDoc(collection(db, "purchases"), purchaseDoc)
 
     // Log activity
     await addDoc(collection(db, "activityLogs"), {
