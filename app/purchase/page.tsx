@@ -50,6 +50,7 @@ function PurchaseContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [pricingTypeFilter, setPricingTypeFilter] = useState<"all" | "unit" | "bulk">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilterKey, setDateFilterKey] = useState(0)
 
   // Supplier details
   const [supplierName, setSupplierName] = useState("")
@@ -124,12 +125,16 @@ function PurchaseContent() {
     let filtered = [...purchases]
 
     // Search filter
-    if (searchTerm) {
+    if (searchTerm && searchTerm.trim() !== "") {
+      const lowerSearch = searchTerm.toLowerCase().trim()
       filtered = filtered.filter((purchase) =>
-        purchase.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (purchase.supplierContact && purchase.supplierContact.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (purchase.notes && purchase.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        purchase.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
+        purchase.supplierName?.toLowerCase().includes(lowerSearch) ||
+        (purchase.supplierContact && purchase.supplierContact.toLowerCase().includes(lowerSearch)) ||
+        (purchase.notes && purchase.notes.toLowerCase().includes(lowerSearch)) ||
+        purchase.items.some(item => 
+          item.itemName?.toLowerCase().includes(lowerSearch) ||
+          item.sku?.toLowerCase().includes(lowerSearch)
+        )
       )
     }
 
@@ -143,17 +148,29 @@ function PurchaseContent() {
     // Date filter
     if (dateFilter.start && dateFilter.end) {
       filtered = filtered.filter((purchase) => {
-        const purchaseDate = purchase.purchaseDate?.toDate
-          ? purchase.purchaseDate.toDate()
-          : new Date(purchase.purchaseDate)
-        return purchaseDate >= dateFilter.start! && purchaseDate <= dateFilter.end!
+        if (!purchase.purchaseDate) return false
+        
+        try {
+          const purchaseDate = purchase.purchaseDate?.toDate
+            ? purchase.purchaseDate.toDate()
+            : new Date(purchase.purchaseDate)
+          
+          // Set end date to end of day for proper comparison
+          const endDate = new Date(dateFilter.end!)
+          endDate.setHours(23, 59, 59, 999)
+          
+          return purchaseDate >= dateFilter.start! && purchaseDate <= endDate
+        } catch (error) {
+          console.error("Error parsing purchase date:", error)
+          return false
+        }
       })
     }
 
     setFilteredPurchases(filtered)
   }, [purchases, searchTerm, pricingTypeFilter, dateFilter])
 
-  const handleDateFilter = (preset: DatePreset | null, start: Date | null, end: Date | null) => {
+  const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
     setDateFilter({ start, end })
   }
 
@@ -843,17 +860,32 @@ function PurchaseContent() {
           /* Purchase History */
           <div className="space-y-6">
             {/* Date Filter */}
-            <DateFilter onFilter={handleDateFilter} />
+            <DateFilter key={dateFilterKey} onFilter={handleDateFilter} defaultPreset={null} />
 
             {/* Filters */}
             <Card className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-medium text-muted-foreground">Filters</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchTerm("")
+                    setPricingTypeFilter("all")
+                    setDateFilter({ start: null, end: null })
+                    setDateFilterKey(prev => prev + 1) // Force DateFilter to reset
+                  }}
+                >
+                  Clear All Filters
+                </Button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Search */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by supplier, item, or notes..."
+                    placeholder="Search by supplier, contact, item, SKU, or notes..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />

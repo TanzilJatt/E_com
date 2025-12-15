@@ -19,10 +19,11 @@ export type DatePreset =
 interface DateFilterProps {
   onFilter: (startDate: Date | null, endDate: Date | null, preset: DatePreset) => void
   showPresets?: boolean
+  defaultPreset?: DatePreset | null
 }
 
-export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
-  const [preset, setPreset] = useState<DatePreset>("this_month")
+export function DateFilter({ onFilter, showPresets = true, defaultPreset = null }: DateFilterProps) {
+  const [preset, setPreset] = useState<DatePreset | null>(defaultPreset)
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
 
@@ -102,9 +103,12 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
     }
   }
 
-  const handlePresetChange = (newPreset: DatePreset) => {
+  const handlePresetChange = (newPreset: DatePreset | null) => {
     setPreset(newPreset)
-    if (newPreset !== "custom") {
+    if (newPreset === null) {
+      // All Time - no filter
+      onFilter(null, null, "this_month") // Pass this_month as dummy preset
+    } else if (newPreset !== "custom") {
       const [start, end] = getDateRange(newPreset)
       onFilter(start, end, newPreset)
     }
@@ -118,7 +122,7 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
   }
 
   const handleClearFilter = () => {
-    setPreset("this_month")
+    setPreset(null)
     setCustomStart("")
     setCustomEnd("")
     onFilter(null, null, "this_month")
@@ -157,10 +161,11 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium mb-2">Filter by Date</label>
             <select
-              value={preset}
-              onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
+              value={preset || ""}
+              onChange={(e) => handlePresetChange(e.target.value === "" ? null : e.target.value as DatePreset)}
               className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
             >
+              <option value="">All Time</option>
               <option value="today">Today {getDateRangeText("today")}</option>
               <option value="yesterday">Yesterday {getDateRangeText("yesterday")}</option>
               <option value="this_week">This Week {getDateRangeText("this_week")}</option>
@@ -210,9 +215,14 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
           </div>
         </div>
         
-        {preset !== "custom" && (
+        {preset !== "custom" && preset !== null && (
           <div className="text-sm text-muted-foreground">
             Showing data for: <span className="font-semibold">{preset.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</span>
+          </div>
+        )}
+        {preset === null && (
+          <div className="text-sm text-muted-foreground">
+            Showing data for: <span className="font-semibold">All Time</span>
           </div>
         )}
       </div>

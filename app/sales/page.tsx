@@ -43,6 +43,7 @@ function SalesContent() {
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "wholesale">("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilterKey, setDateFilterKey] = useState(0)
   const [loading, setLoading] = useState(false)
 
   // Listen for auth state changes
@@ -763,10 +764,26 @@ function SalesContent() {
         {activeView === "list" && (
           <div className="space-y-6">
             {/* Date Filter */}
-            <DateFilter onFilter={handleDateFilter} />
+            <DateFilter key={dateFilterKey} onFilter={handleDateFilter} defaultPreset={null} />
 
             {/* Filters */}
             <Card className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-medium text-muted-foreground">Filters</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchTerm("")
+                    setSaleTypeFilter("all")
+                    setPaymentMethodFilter("all")
+                    setDateFilter({ start: null, end: null })
+                    setDateFilterKey(prev => prev + 1) // Force DateFilter to reset
+                  }}
+                >
+                  Clear All Filters
+                </Button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Search */}
                 <div>
