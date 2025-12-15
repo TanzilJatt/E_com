@@ -8,6 +8,8 @@ export interface PurchaseItem {
   quantity: number
   unitCost: number
   totalCost: number
+  pricingType?: "unit" | "bulk"
+  bulkPrice?: number
 }
 
 export interface Purchase {

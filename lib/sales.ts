@@ -23,6 +23,8 @@ export interface Sale {
     cashAmount?: number
     creditAmount?: number
   }
+  purchaserName?: string
+  description?: string
   userId: string
   userName: string
   createdAt: any
@@ -72,7 +74,7 @@ export async function createSale(
     }
 
     // Create sale with cleaned data
-    const saleRef = await addDoc(collection(db, "sales"), {
+    const saleDoc: any = {
       type: saleData.type,
       items: cleanedItems,
       totalAmount: saleData.totalAmount,
@@ -81,7 +83,17 @@ export async function createSale(
       userName,
       createdAt: serverTimestamp(),
       transactionDate: serverTimestamp(),
-    })
+    }
+
+    // Add optional fields if provided
+    if (saleData.purchaserName) {
+      saleDoc.purchaserName = saleData.purchaserName
+    }
+    if (saleData.description) {
+      saleDoc.description = saleData.description
+    }
+
+    const saleRef = await addDoc(collection(db, "sales"), saleDoc)
 
     // Update inventory for each item
     for (const item of saleData.items) {

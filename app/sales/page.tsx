@@ -30,6 +30,8 @@ function SalesContent() {
   const [creditPrice, setCreditPrice] = useState<number | "">("")
   const [paymentCash, setPaymentCash] = useState(false)
   const [paymentCredit, setPaymentCredit] = useState(false)
+  const [purchaserName, setPurchaserName] = useState("")
+  const [description, setDescription] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -113,7 +115,9 @@ function SalesContent() {
     if (searchTerm) {
       filtered = filtered.filter((sale) =>
         sale.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sale.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
+        sale.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (sale.purchaserName && sale.purchaserName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (sale.description && sale.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
 
@@ -300,6 +304,8 @@ function SalesContent() {
             cashAmount: finalCashAmount,
             creditAmount: finalCreditAmount,
           },
+          purchaserName: purchaserName || undefined,
+          description: description || undefined,
           userId: "",
           userName: "",
         },
@@ -316,6 +322,8 @@ function SalesContent() {
         setCreditPrice("")
         setPaymentCash(false)
         setPaymentCredit(false)
+        setPurchaserName("")
+        setDescription("")
         fetchItems()
         fetchSales() // Refresh sales list
       }
@@ -408,6 +416,8 @@ function SalesContent() {
         `#${(index + 1).toString().padStart(4, '0')}`,
         date,
         sale.type.toUpperCase(),
+        sale.purchaserName || "-",
+        sale.description || "-",
         itemsList,
         paymentInfo,
         `RS ${sale.totalAmount.toFixed(2)}`
@@ -417,18 +427,20 @@ function SalesContent() {
     // Add table
     autoTable(doc, {
       startY: filterInfo.length > 0 ? 42 : 36,
-      head: [["#", "Date", "Type", "Items", "Payment", "Total"]],
+      head: [["#", "Date", "Type", "Purchaser", "Description", "Items", "Payment", "Total"]],
       body: tableData,
       theme: "grid",
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 7, cellPadding: 1.5 },
       headStyles: { fillColor: [59, 130, 246], textColor: 255 },
       columnStyles: {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 25 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 60 },
-        4: { cellWidth: 30 },
-        5: { cellWidth: 25 }
+        0: { cellWidth: 12 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 15 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 45 },
+        6: { cellWidth: 25 },
+        7: { cellWidth: 22 }
       }
     })
     
@@ -520,6 +532,29 @@ function SalesContent() {
               />
               <span>Wholesale</span>
             </label>
+          </div>
+        </Card>
+
+        {/* Purchaser Information */}
+        <Card className="p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">Purchaser Information (Optional)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Purchaser Name</label>
+              <Input
+                value={purchaserName}
+                onChange={(e) => setPurchaserName(e.target.value)}
+                placeholder={purchaserName ? "" : "Enter purchaser name"}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Description</label>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={description ? "" : "Enter sale description"}
+              />
+            </div>
           </div>
         </Card>
 
@@ -738,7 +773,7 @@ function SalesContent() {
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by user or item..."
+                    placeholder="Search by user, item, purchaser, or description..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -818,6 +853,16 @@ function SalesContent() {
                           <div className="text-sm text-muted-foreground">
                             By: {sale.userName || "Unknown"}
                           </div>
+                          {sale.purchaserName && (
+                            <div className="text-sm text-muted-foreground">
+                              Purchaser: {sale.purchaserName}
+                            </div>
+                          )}
+                          {sale.description && (
+                            <div className="text-sm text-muted-foreground">
+                              Description: {sale.description}
+                            </div>
+                          )}
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold text-primary">
