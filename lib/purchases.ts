@@ -70,44 +70,17 @@ export async function createPurchase(
       }
     }
 
-    // Clean items data - remove undefined values
-    const cleanedItems = purchaseData.items.map(item => {
-      const cleanItem: any = {
-        itemId: item.itemId,
-        itemName: item.itemName,
-        sku: item.sku,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
-        totalCost: item.totalCost,
-      }
-      if (item.pricingType !== undefined) {
-        cleanItem.pricingType = item.pricingType
-      }
-      if (item.bulkPrice !== undefined) {
-        cleanItem.bulkPrice = item.bulkPrice
-      }
-      return cleanItem
-    })
-
-    // Create purchase record with cleaned data
-    const purchaseDoc: any = {
+    // Create purchase record
+    const purchaseRef = await addDoc(collection(db, "purchases"), {
       userId,
       supplierName: purchaseData.supplierName,
-      items: cleanedItems,
+      supplierContact: purchaseData.supplierContact || "",
+      items: purchaseData.items,
       totalAmount: purchaseData.totalAmount,
+      notes: purchaseData.notes || "",
       purchaseDate: serverTimestamp(),
       createdAt: serverTimestamp(),
-    }
-
-    // Add optional fields if they have values
-    if (purchaseData.supplierContact) {
-      purchaseDoc.supplierContact = purchaseData.supplierContact
-    }
-    if (purchaseData.notes) {
-      purchaseDoc.notes = purchaseData.notes
-    }
-
-    const purchaseRef = await addDoc(collection(db, "purchases"), purchaseDoc)
+    })
 
     // Log activity
     await addDoc(collection(db, "activityLogs"), {
@@ -137,10 +110,13 @@ export async function getPurchases(userId: string): Promise<Purchase[]> {
     )
 
     const snapshot = await getDocs(q)
-    return snapshot.docs.map((doc) => ({
+    const purchases = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     })) as Purchase[]
+    
+    // Filter out deleted purchases
+    return purchases.filter((purchase: any) => !purchase.deleted)
   } catch (error: any) {
     // If index doesn't exist, fallback to client-side sorting
     if (error?.code === "failed-precondition" || error?.message?.includes("index")) {
@@ -155,12 +131,14 @@ export async function getPurchases(userId: string): Promise<Purchase[]> {
           ...doc.data(),
         })) as Purchase[]
         
-        // Sort client-side by purchaseDate descending
-        return purchases.sort((a, b) => {
-          const aTime = a.purchaseDate?.toMillis ? a.purchaseDate.toMillis() : 0
-          const bTime = b.purchaseDate?.toMillis ? b.purchaseDate.toMillis() : 0
-          return bTime - aTime
-        })
+        // Filter out deleted purchases and sort client-side by purchaseDate descending
+        return purchases
+          .filter((purchase: any) => !purchase.deleted)
+          .sort((a, b) => {
+            const aTime = a.purchaseDate?.toMillis ? a.purchaseDate.toMillis() : 0
+            const bTime = b.purchaseDate?.toMillis ? b.purchaseDate.toMillis() : 0
+            return bTime - aTime
+          })
       } catch (fallbackError) {
         console.error("Error in fallback query:", fallbackError)
         throw fallbackError
@@ -203,6 +181,129 @@ export async function getTotalPurchases(
   } catch (error) {
     console.error("Error calculating total purchases:", error)
     return 0
+  }
+}
+
+/**
+ * Update an existing purchase record
+ */
+export async function updatePurchase(
+  purchaseId: string,
+  purchaseData: {
+    supplierName: string
+    supplierContact?: string
+    items: PurchaseItem[]
+    totalAmount: number
+    notes?: string
+  },
+  userId: string
+): Promise<void> {
+  try {
+    const purchaseRef = doc(db, "purchases", purchaseId)
+    
+    // Get the old purchase to calculate inventory adjustments
+    const oldPurchaseDoc = await getDoc(purchaseRef)
+    if (!oldPurchaseDoc.exists()) {
+      throw new Error("Purchase not found")
+    }
+    
+    const oldPurchase = oldPurchaseDoc.data() as Purchase
+    
+    // Adjust inventory: subtract old quantities and add new quantities
+    // First, revert the old quantities
+    for (const oldItem of oldPurchase.items) {
+      const itemRef = doc(db, "items", oldItem.itemId)
+      const itemDoc = await getDoc(itemRef)
+      if (itemDoc.exists()) {
+        await updateDoc(itemRef, {
+          quantity: increment(-oldItem.quantity),
+          updatedAt: serverTimestamp(),
+          updatedBy: userId,
+        })
+      }
+    }
+    
+    // Then, add the new quantities
+    for (const newItem of purchaseData.items) {
+      const itemRef = doc(db, "items", newItem.itemId)
+      const itemDoc = await getDoc(itemRef)
+      if (itemDoc.exists()) {
+        await updateDoc(itemRef, {
+          quantity: increment(newItem.quantity),
+          updatedAt: serverTimestamp(),
+          updatedBy: userId,
+        })
+      }
+    }
+
+    // Update purchase record
+    await updateDoc(purchaseRef, {
+      supplierName: purchaseData.supplierName,
+      supplierContact: purchaseData.supplierContact || "",
+      items: purchaseData.items,
+      totalAmount: purchaseData.totalAmount,
+      notes: purchaseData.notes || "",
+      updatedAt: serverTimestamp(),
+    })
+
+    // Log activity
+    await addDoc(collection(db, "activityLogs"), {
+      userId,
+      action: "Purchase Updated",
+      description: `Updated purchase from ${purchaseData.supplierName}`,
+      timestamp: serverTimestamp(),
+    })
+  } catch (error) {
+    console.error("Error updating purchase:", error)
+    throw error
+  }
+}
+
+/**
+ * Delete a purchase record
+ */
+export async function deletePurchase(purchaseId: string, userId: string): Promise<void> {
+  try {
+    const purchaseRef = doc(db, "purchases", purchaseId)
+    
+    // Get the purchase to revert inventory
+    const purchaseDoc = await getDoc(purchaseRef)
+    if (!purchaseDoc.exists()) {
+      throw new Error("Purchase not found")
+    }
+    
+    const purchase = purchaseDoc.data() as Purchase
+    
+    // Revert inventory quantities
+    for (const item of purchase.items) {
+      const itemRef = doc(db, "items", item.itemId)
+      const itemDoc = await getDoc(itemRef)
+      if (itemDoc.exists()) {
+        await updateDoc(itemRef, {
+          quantity: increment(-item.quantity),
+          updatedAt: serverTimestamp(),
+          updatedBy: userId,
+        })
+      }
+    }
+
+    // Delete purchase record
+    await updateDoc(purchaseRef, {
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      deletedBy: userId,
+    })
+
+    // Log activity
+    await addDoc(collection(db, "activityLogs"), {
+      userId,
+      action: "Purchase Deleted",
+      description: `Deleted purchase from ${purchase.supplierName}`,
+      timestamp: serverTimestamp(),
+    })
+  } catch (error) {
+    console.error("Error deleting purchase:", error)
+    throw error
   }
 }
 

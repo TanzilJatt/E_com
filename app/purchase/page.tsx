@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Navbar } from "@/components/navbar"
-import { createPurchase, getPurchases, type Purchase, type PurchaseItem } from "@/lib/purchases"
+import { createPurchase, getPurchases, updatePurchase, deletePurchase, type Purchase, type PurchaseItem } from "@/lib/purchases"
 import { getItems, addItem, type Item } from "@/lib/items"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
@@ -50,7 +50,6 @@ function PurchaseContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [pricingTypeFilter, setPricingTypeFilter] = useState<"all" | "unit" | "bulk">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
-  const [dateFilterKey, setDateFilterKey] = useState(0)
 
   // Supplier details
   const [supplierName, setSupplierName] = useState("")
@@ -76,6 +75,10 @@ function PurchaseContent() {
   })
 
   const [userId, setUserId] = useState<string | null>(null)
+  
+  // Edit and Delete states
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -125,16 +128,12 @@ function PurchaseContent() {
     let filtered = [...purchases]
 
     // Search filter
-    if (searchTerm && searchTerm.trim() !== "") {
-      const lowerSearch = searchTerm.toLowerCase().trim()
+    if (searchTerm) {
       filtered = filtered.filter((purchase) =>
-        purchase.supplierName?.toLowerCase().includes(lowerSearch) ||
-        (purchase.supplierContact && purchase.supplierContact.toLowerCase().includes(lowerSearch)) ||
-        (purchase.notes && purchase.notes.toLowerCase().includes(lowerSearch)) ||
-        purchase.items.some(item => 
-          item.itemName?.toLowerCase().includes(lowerSearch) ||
-          item.sku?.toLowerCase().includes(lowerSearch)
-        )
+        purchase.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (purchase.supplierContact && purchase.supplierContact.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (purchase.notes && purchase.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        purchase.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
 
@@ -148,29 +147,17 @@ function PurchaseContent() {
     // Date filter
     if (dateFilter.start && dateFilter.end) {
       filtered = filtered.filter((purchase) => {
-        if (!purchase.purchaseDate) return false
-        
-        try {
-          const purchaseDate = purchase.purchaseDate?.toDate
-            ? purchase.purchaseDate.toDate()
-            : new Date(purchase.purchaseDate)
-          
-          // Set end date to end of day for proper comparison
-          const endDate = new Date(dateFilter.end!)
-          endDate.setHours(23, 59, 59, 999)
-          
-          return purchaseDate >= dateFilter.start! && purchaseDate <= endDate
-        } catch (error) {
-          console.error("Error parsing purchase date:", error)
-          return false
-        }
+        const purchaseDate = purchase.purchaseDate?.toDate
+          ? purchase.purchaseDate.toDate()
+          : new Date(purchase.purchaseDate)
+        return purchaseDate >= dateFilter.start! && purchaseDate <= dateFilter.end!
       })
     }
 
     setFilteredPurchases(filtered)
   }, [purchases, searchTerm, pricingTypeFilter, dateFilter])
 
-  const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
+  const handleDateFilter = (preset: DatePreset | null, start: Date | null, end: Date | null) => {
     setDateFilter({ start, end })
   }
 
@@ -388,6 +375,99 @@ function PurchaseContent() {
     }
   }
 
+  const handleEditPurchase = (purchase: Purchase) => {
+    // Load purchase data into form
+    setSupplierName(purchase.supplierName)
+    setSupplierContact(purchase.supplierContact || "")
+    setNotes(purchase.notes || "")
+    setCart(purchase.items as CartItem[])
+    setEditingPurchaseId(purchase.id)
+    setActiveView("record")
+    setError("")
+    setSuccess("")
+  }
+
+  const handleUpdatePurchase = async () => {
+    if (!userId || !editingPurchaseId) return
+
+    // Prevent multiple submissions
+    if (isSubmitting) return
+
+    if (!supplierName) {
+      setError("Please enter supplier name")
+      return
+    }
+
+    if (cart.length === 0) {
+      setError("Please add items to purchase")
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      setError("")
+      
+      await updatePurchase(editingPurchaseId, {
+        supplierName,
+        supplierContact,
+        items: cart,
+        totalAmount: calculateTotal(),
+        notes,
+      }, userId)
+
+      setSuccess("Purchase updated successfully!")
+      
+      // Reset form
+      setCart([])
+      setSupplierName("")
+      setSupplierContact("")
+      setNotes("")
+      setEditingPurchaseId(null)
+
+      // Refresh purchases and items lists
+      await Promise.all([fetchPurchases(), fetchItems()])
+
+      setTimeout(() => {
+        setSuccess("")
+        setActiveView("view")
+      }, 2000)
+    } catch (err) {
+      console.error("Error updating purchase:", err)
+      setError("Failed to update purchase")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingPurchaseId(null)
+    setCart([])
+    setSupplierName("")
+    setSupplierContact("")
+    setNotes("")
+    setError("")
+    setSuccess("")
+  }
+
+  const handleDeletePurchase = async (purchaseId: string) => {
+    if (!userId) return
+
+    try {
+      await deletePurchase(purchaseId, userId)
+      setSuccess("Purchase deleted successfully!")
+      setDeleteConfirmId(null)
+      
+      // Refresh purchases and items lists
+      await Promise.all([fetchPurchases(), fetchItems()])
+
+      setTimeout(() => setSuccess(""), 3000)
+    } catch (err) {
+      console.error("Error deleting purchase:", err)
+      setError("Failed to delete purchase")
+      setTimeout(() => setError(""), 3000)
+    }
+  }
+
   const exportPurchasesToPDF = () => {
     const doc = new jsPDF()
     
@@ -505,6 +585,27 @@ function PurchaseContent() {
 
         {activeView === "record" ? (
           <>
+            {/* Edit Mode Indicator */}
+            {editingPurchaseId && (
+              <Card className="p-4 mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-blue-800 dark:text-blue-300">Editing Purchase</h3>
+                    <p className="text-sm text-blue-600 dark:text-blue-400">
+                      You are currently editing an existing purchase. Click "Update Purchase" to save changes or "Cancel Edit" to discard.
+                    </p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleCancelEdit}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </Card>
+            )}
+            
             {/* Purchase Mode Selector */}
             <Card className="p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Purchase Type</h2>
@@ -531,22 +632,41 @@ function PurchaseContent() {
               <h2 className="text-lg font-semibold mb-4">Supplier Information</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Supplier Name *</label>
+                  <label className="block text-sm font-medium mb-2">Supplier Name * (Max 30 characters)</label>
                   <Input
                     value={supplierName}
-                    onChange={(e) => setSupplierName(e.target.value)}
-                    placeholder={supplierName ? "" : "Enter supplier name"}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Only allow letters and spaces, max 30 characters
+                      if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                        setSupplierName(value)
+                      }
+                    }}
+                    placeholder={supplierName ? "" : "Enter supplier name (letters and spaces only)"}
                     disabled={isSubmitting}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {supplierName.length}/30 characters (letters and spaces only)
+                  </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Contact (Optional)</label>
+                  <label className="block text-sm font-medium mb-2">Contact (Optional, Max 15 characters)</label>
                   <Input
                     value={supplierContact}
-                    onChange={(e) => setSupplierContact(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      // Max 15 characters
+                      if (value.length <= 15) {
+                        setSupplierContact(value)
+                      }
+                    }}
                     placeholder={supplierContact ? "" : "Phone or email"}
                     disabled={isSubmitting}
+                    maxLength={15}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {supplierContact.length}/15 characters
+                  </p>
                 </div>
               </div>
             </Card>
@@ -674,13 +794,22 @@ function PurchaseContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Item Name *</label>
+                    <label className="block text-sm font-medium mb-2">Item Name * (Max 30 characters)</label>
                     <Input
                       value={newItem.itemName}
-                      onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
-                      placeholder={newItem.itemName ? "" : "Enter item name"}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        // Only allow letters and spaces, max 30 characters
+                        if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                          setNewItem({ ...newItem, itemName: value })
+                        }
+                      }}
+                      placeholder={newItem.itemName ? "" : "Enter item name (letters and spaces only)"}
                       disabled={isSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {newItem.itemName.length}/30 characters (letters and spaces only)
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -731,24 +860,42 @@ function PurchaseContent() {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Vendor Name (Optional)</label>
+                    <label className="block text-sm font-medium mb-2">Vendor Name (Optional, Max 30 characters)</label>
                     <Input
                       value={newItem.vendor}
-                      onChange={(e) => setNewItem({ ...newItem, vendor: e.target.value })}
-                      placeholder={newItem.vendor ? "" : "Enter vendor or supplier name"}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        // Only allow letters and spaces, max 30 characters
+                        if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                          setNewItem({ ...newItem, vendor: value })
+                        }
+                      }}
+                      placeholder={newItem.vendor ? "" : "Enter vendor name (letters and spaces only)"}
                       disabled={isSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {newItem.vendor.length}/30 characters (letters and spaces only)
+                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Description (Optional)</label>
+                    <label className="block text-sm font-medium mb-2">Description (Optional, Max 100 characters)</label>
                     <Textarea
                       value={newItem.description}
-                      onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        // Allow letters, numbers, spaces, and common punctuation, max 100 characters
+                        if (value.length <= 100) {
+                          setNewItem({ ...newItem, description: value })
+                        }
+                      }}
                       placeholder={newItem.description ? "" : "Enter item description..."}
                       rows={3}
                       disabled={isSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {newItem.description.length}/100 characters
+                    </p>
                   </div>
 
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
@@ -847,45 +994,45 @@ function PurchaseContent() {
             )}
 
             {/* Submit Button */}
-            <Button 
-              onClick={handleSubmitPurchase} 
-              className="w-full" 
-              size="lg" 
-              disabled={cart.length === 0 || isSubmitting}
-            >
-              {isSubmitting ? "Processing Purchase..." : "Complete Purchase"}
-            </Button>
+            <div className="flex gap-4">
+              <Button 
+                onClick={editingPurchaseId ? handleUpdatePurchase : handleSubmitPurchase} 
+                className="flex-1" 
+                size="lg" 
+                disabled={cart.length === 0 || isSubmitting}
+              >
+                {isSubmitting 
+                  ? (editingPurchaseId ? "Updating Purchase..." : "Processing Purchase...") 
+                  : (editingPurchaseId ? "Update Purchase" : "Complete Purchase")
+                }
+              </Button>
+              {editingPurchaseId && (
+                <Button 
+                  onClick={handleCancelEdit} 
+                  variant="outline"
+                  size="lg" 
+                  disabled={isSubmitting}
+                >
+                  Cancel Edit
+                </Button>
+              )}
+            </div>
           </>
         ) : (
           /* Purchase History */
           <div className="space-y-6">
             {/* Date Filter */}
-            <DateFilter key={dateFilterKey} onFilter={handleDateFilter} defaultPreset={null} />
+            <DateFilter onFilter={handleDateFilter} />
 
             {/* Filters */}
             <Card className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-medium text-muted-foreground">Filters</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearchTerm("")
-                    setPricingTypeFilter("all")
-                    setDateFilter({ start: null, end: null })
-                    setDateFilterKey(prev => prev + 1) // Force DateFilter to reset
-                  }}
-                >
-                  Clear All Filters
-                </Button>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Search */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by supplier, contact, item, SKU, or notes..."
+                    placeholder="Search by supplier, item, or notes..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -944,9 +1091,27 @@ function PurchaseContent() {
                             <p className="text-sm text-muted-foreground">Contact: {purchase.supplierContact}</p>
                           )}
                         </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
-                          <div className="text-sm text-muted-foreground">{purchase.items.length} items</div>
+                        <div className="text-right flex flex-col items-end gap-2">
+                          <div>
+                            <div className="text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
+                            <div className="text-sm text-muted-foreground">{purchase.items.length} items</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleEditPurchase(purchase)}
+                            >
+                              Edit
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="destructive"
+                              onClick={() => setDeleteConfirmId(purchase.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
                         </div>
                       </div>
 
@@ -980,6 +1145,35 @@ function PurchaseContent() {
                           <p className="text-sm text-muted-foreground">
                             <strong>Notes:</strong> {purchase.notes}
                           </p>
+                        </div>
+                      )}
+
+                      {/* Delete Confirmation Dialog */}
+                      {deleteConfirmId === purchase.id && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                          <Card className="p-6 max-w-md mx-4">
+                            <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
+                            <p className="text-muted-foreground mb-6">
+                              Are you sure you want to delete this purchase from <strong>{purchase.supplierName}</strong>? 
+                              This will also adjust the inventory quantities. This action cannot be undone.
+                            </p>
+                            <div className="flex gap-4">
+                              <Button 
+                                variant="destructive" 
+                                onClick={() => handleDeletePurchase(purchase.id)}
+                                className="flex-1"
+                              >
+                                Delete
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="flex-1"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </Card>
                         </div>
                       )}
                     </Card>

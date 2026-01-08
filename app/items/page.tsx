@@ -261,14 +261,23 @@ function ItemsContent() {
             <h2 className="text-xl font-semibold mb-4">{editingId ? "Edit Item" : "Add New Item"}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Item Name *</label>
+                <label className="block text-sm font-medium mb-1">Item Name * (Max 30 characters)</label>
                 <Input
                   type="text"
-                  placeholder={formData.name ? "" : "Product name"}
+                  placeholder={formData.name ? "" : "Product name (letters and spaces only)"}
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Only allow letters and spaces, max 30 characters
+                    if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                      setFormData({ ...formData, name: value })
+                    }
+                  }}
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formData.name.length}/30 characters (letters and spaces only)
+                </p>
               </div>
               {editingId && (
               <div>
@@ -303,23 +312,41 @@ function ItemsContent() {
                 />
               </div>
               <div >
-                <label className="block text-sm font-medium mb-1">Vendor Name</label>
+                <label className="block text-sm font-medium mb-1">Vendor Name (Max 30 characters)</label>
                 <Input
                   type="text"
-                  placeholder={formData.vendor ? "" : "Vendor or supplier name"}
+                  placeholder={formData.vendor ? "" : "Vendor name (letters and spaces only)"}
                   value={formData.vendor}
-                  onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Only allow letters and spaces, max 30 characters
+                    if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                      setFormData({ ...formData, vendor: value })
+                    }
+                  }}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formData.vendor.length}/30 characters (letters and spaces only)
+                </p>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Description</label>
+                <label className="block text-sm font-medium mb-1">Description (Max 100 characters)</label>
                 <textarea
                   placeholder={formData.description ? "" : "Item description"}
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Allow letters, numbers, spaces, and common punctuation, max 100 characters
+                    if (value.length <= 100) {
+                      setFormData({ ...formData, description: value })
+                    }
+                  }}
                   className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
                   rows={3}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formData.description.length}/100 characters
+                </p>
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
              
