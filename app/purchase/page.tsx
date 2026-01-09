@@ -335,6 +335,11 @@ function PurchaseContent() {
       return
     }
 
+    if (supplierContact && supplierContact.length < 11) {
+      setError("Contact number must be at least 11 digits")
+      return
+    }
+
     if (cart.length === 0) {
       setError("Please add items to purchase")
       return
@@ -395,6 +400,11 @@ function PurchaseContent() {
 
     if (!supplierName) {
       setError("Please enter supplier name")
+      return
+    }
+
+    if (supplierContact && supplierContact.length < 11) {
+      setError("Contact number must be at least 11 digits")
       return
     }
 
@@ -650,22 +660,27 @@ function PurchaseContent() {
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Contact (Optional, Max 15 characters)</label>
+                  <label className="block text-sm font-medium mb-2">Contact Number (Optional, Min 11, Max 15 digits)</label>
                   <Input
                     value={supplierContact}
                     onChange={(e) => {
                       const value = e.target.value
-                      // Max 15 characters
-                      if (value.length <= 15) {
+                      // Only allow numbers, max 15 characters
+                      if (value.length <= 15 && /^\d*$/.test(value)) {
                         setSupplierContact(value)
                       }
                     }}
-                    placeholder={supplierContact ? "" : "Phone or email"}
+                    placeholder={supplierContact ? "" : "Enter phone number (numbers only)"}
                     disabled={isSubmitting}
                     maxLength={15}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {supplierContact.length}/15 characters
+                  <p className={`text-xs mt-1 ${
+                    supplierContact.length > 0 && supplierContact.length < 11 
+                      ? "text-red-500 dark:text-red-400" 
+                      : "text-muted-foreground"
+                  }`}>
+                    {supplierContact.length}/15 digits (numbers only)
+                    {supplierContact.length > 0 && supplierContact.length < 11 && " - minimum 11 required"}
                   </p>
                 </div>
               </div>
@@ -717,11 +732,17 @@ function PurchaseContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Quantity</label>
+                    <label className="block text-sm font-medium mb-2">Quantity (Numbers only)</label>
                     <Input
                       type="text"
                       value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        // Only allow numbers and decimal point
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          setQuantity(value)
+                        }
+                      }}
                       onFocus={(e) => e.target.select()}
                       placeholder={quantity ? "" : "0.00"}
                       disabled={isSubmitting}
@@ -729,11 +750,17 @@ function PurchaseContent() {
                   </div>
                   {existingItemPricingType === "unit" ? (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Unit Cost (RS)</label>
+                      <label className="block text-sm font-medium mb-2">Unit Cost (RS) (Numbers only)</label>
                       <Input
                         type="text"
                         value={unitCost}
-                        onChange={(e) => setUnitCost(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          // Only allow numbers and decimal point
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setUnitCost(value)
+                          }
+                        }}
                         onFocus={(e) => e.target.select()}
                         placeholder={unitCost ? "" : "0.00"}
                         disabled={isSubmitting}
@@ -741,11 +768,17 @@ function PurchaseContent() {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS)</label>
+                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) (Numbers only)</label>
                       <Input
                         type="text"
                         value={bulkPrice}
-                        onChange={(e) => setBulkPrice(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          // Only allow numbers and decimal point
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setBulkPrice(value)
+                          }
+                        }}
                         onFocus={(e) => e.target.select()}
                         placeholder={bulkPrice ? "" : "0.00"}
                         disabled={isSubmitting}
@@ -814,11 +847,17 @@ function PurchaseContent() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Purchase Quantity *</label>
+                      <label className="block text-sm font-medium mb-2">Purchase Quantity * (Numbers only)</label>
                       <Input
                         type="text"
                         value={newItem.quantity}
-                        onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          // Only allow numbers and decimal point
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setNewItem({ ...newItem, quantity: value })
+                          }
+                        }}
                         onFocus={(e) => e.target.select()}
                         placeholder={newItem.quantity ? "" : "0.00"}
                         disabled={isSubmitting}
@@ -826,11 +865,17 @@ function PurchaseContent() {
                     </div>
                     {newItem.pricingType === "unit" ? (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Unit Cost (RS) *</label>
+                        <label className="block text-sm font-medium mb-2">Unit Cost (RS) * (Numbers only)</label>
                         <Input
                           type="text"
                           value={newItem.unitCost}
-                          onChange={(e) => setNewItem({ ...newItem, unitCost: e.target.value })}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            // Only allow numbers and decimal point
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setNewItem({ ...newItem, unitCost: value })
+                            }
+                          }}
                           onFocus={(e) => e.target.select()}
                           placeholder={newItem.unitCost ? "" : "0.00"}
                           disabled={isSubmitting}
@@ -838,11 +883,17 @@ function PurchaseContent() {
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) *</label>
+                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) * (Numbers only)</label>
                         <Input
                           type="text"
                           value={newItem.bulkPrice}
-                          onChange={(e) => setNewItem({ ...newItem, bulkPrice: e.target.value })}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            // Only allow numbers and decimal point
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setNewItem({ ...newItem, bulkPrice: value })
+                            }
+                          }}
                           onFocus={(e) => e.target.select()}
                           placeholder={newItem.bulkPrice ? "" : "0.00"}
                           disabled={isSubmitting}
@@ -995,17 +1046,17 @@ function PurchaseContent() {
 
             {/* Submit Button */}
             <div className="flex gap-4">
-              <Button 
+            <Button 
                 onClick={editingPurchaseId ? handleUpdatePurchase : handleSubmitPurchase} 
                 className="flex-1" 
-                size="lg" 
-                disabled={cart.length === 0 || isSubmitting}
-              >
+              size="lg" 
+              disabled={cart.length === 0 || isSubmitting}
+            >
                 {isSubmitting 
                   ? (editingPurchaseId ? "Updating Purchase..." : "Processing Purchase...") 
                   : (editingPurchaseId ? "Update Purchase" : "Complete Purchase")
                 }
-              </Button>
+            </Button>
               {editingPurchaseId && (
                 <Button 
                   onClick={handleCancelEdit} 
@@ -1093,8 +1144,8 @@ function PurchaseContent() {
                         </div>
                         <div className="text-right flex flex-col items-end gap-2">
                           <div>
-                            <div className="text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
-                            <div className="text-sm text-muted-foreground">{purchase.items.length} items</div>
+                          <div className="text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
+                          <div className="text-sm text-muted-foreground">{purchase.items.length} items</div>
                           </div>
                           <div className="flex gap-2">
                             <Button 

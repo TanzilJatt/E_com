@@ -180,7 +180,7 @@ function SalesContent() {
       setError("Not enough stock available")
       return
     }
-
+    
     // Ensure quantity is a valid number
     const qty = typeof quantity === 'number' ? quantity : 0
     const price = typeof pricePerItem === 'number' ? pricePerItem : 0
@@ -504,7 +504,7 @@ function SalesContent() {
           <div>
 
         {/* Sale Type Selector */}
-        <Card className="p-6 mb-8">
+        {/* <Card className="p-6 mb-8">
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -525,7 +525,7 @@ function SalesContent() {
               <span>Wholesale</span>
             </label>
           </div>
-        </Card>
+        </Card> */}
 
         {/* Purchaser Information */}
         <Card className="p-6 mb-8">
@@ -605,21 +605,21 @@ function SalesContent() {
                     }}
                   />
                 </div>
-                
-                <div>
+                  
+                  <div>
                   <label className="block text-sm font-medium mb-1">Price Per Item (RS) *</label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
                     placeholder="Enter price per item"
                     value={pricePerItem === "" ? "" : pricePerItem}
                     onChange={(e) => setPricePerItem(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     className="font-semibold"
-                  />
-                </div>
-                
-                <div>
+                    />
+                  </div>
+                  
+                  <div>
                   <label className="block text-sm font-medium mb-1">Total Amount</label>
                   <div className="w-full border-2 border-primary/30 bg-primary/5 rounded-lg p-3">
                     <p className="text-2xl font-bold text-primary">
@@ -699,7 +699,7 @@ function SalesContent() {
                 </div>
                 <div className="border-t-2 border-primary/30 pt-3 mt-3">
                   <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
-                    <span className="font-semibold">Grand Total:</span>
+                  <span className="font-semibold">Grand Total:</span>
                     <span className="text-3xl font-bold text-primary">RS {grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
@@ -714,9 +714,9 @@ function SalesContent() {
                 <div className="space-y-4">
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer mb-2">
-                      <input
-                        type="checkbox"
-                        checked={paymentCash}
+                    <input
+                      type="checkbox"
+                      checked={paymentCash}
                         onChange={(e) => {
                           setPaymentCash(e.target.checked)
                           if (!e.target.checked) {
@@ -734,10 +734,10 @@ function SalesContent() {
                           }
                         }}
                         disabled={cart.length === 0}
-                        className="w-4 h-4"
-                      />
+                      className="w-4 h-4"
+                    />
                       <span className="text-sm font-medium">💵 Cash Payment</span>
-                    </label>
+                  </label>
                     {paymentCash && (
                       <div>
                         <Input
@@ -761,23 +761,23 @@ function SalesContent() {
                   
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer mb-2">
-                      <input
-                        type="checkbox"
-                        checked={paymentCredit}
+                    <input
+                      type="checkbox"
+                      checked={paymentCredit}
                         onChange={(e) => {
                           setPaymentCredit(e.target.checked)
                           if (!e.target.checked) setCreditAmount("")
                         }}
                         disabled={cart.length === 0}
-                        className="w-4 h-4"
-                      />
+                      className="w-4 h-4"
+                    />
                       <span className="text-sm font-medium">💳 Credit Payment</span>
                       {creditAmount !== "" && typeof creditAmount === 'number' && creditAmount > 0 && (
                         <span className="text-xs text-blue-600 dark:text-blue-400 ml-2">
                           (Auto-calculated)
-                        </span>
+                    </span>
                       )}
-                    </label>
+                  </label>
                     {paymentCredit && (
                       <div>
                         <Input

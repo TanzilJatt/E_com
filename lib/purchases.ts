@@ -135,10 +135,10 @@ export async function getPurchases(userId: string): Promise<Purchase[]> {
         return purchases
           .filter((purchase: any) => !purchase.deleted)
           .sort((a, b) => {
-            const aTime = a.purchaseDate?.toMillis ? a.purchaseDate.toMillis() : 0
-            const bTime = b.purchaseDate?.toMillis ? b.purchaseDate.toMillis() : 0
-            return bTime - aTime
-          })
+          const aTime = a.purchaseDate?.toMillis ? a.purchaseDate.toMillis() : 0
+          const bTime = b.purchaseDate?.toMillis ? b.purchaseDate.toMillis() : 0
+          return bTime - aTime
+        })
       } catch (fallbackError) {
         console.error("Error in fallback query:", fallbackError)
         throw fallbackError
