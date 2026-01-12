@@ -504,7 +504,7 @@ function SalesContent() {
           <div>
 
         {/* Sale Type Selector */}
-        {/* <Card className="p-6 mb-8">
+        <Card className="p-6 mb-8">
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -525,7 +525,7 @@ function SalesContent() {
               <span>Wholesale</span>
             </label>
           </div>
-        </Card> */}
+        </Card> 
 
         {/* Purchaser Information */}
         <Card className="p-6 mb-8">

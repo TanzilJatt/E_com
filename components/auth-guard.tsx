@@ -13,11 +13,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   // Public routes that don't require authentication
-  const publicRoutes = ["/login"]
+  const publicRoutes = ["/login", "/verify-email"]
   const isPublicRoute = publicRoutes.includes(pathname || "")
 
   useEffect(() => {
-    // If on login page, don't check auth
+    // If on login page or verify email page, don't check auth
     if (isPublicRoute) {
       setIsLoading(false)
       return
@@ -32,9 +32,19 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user && !isPublicRoute) {
         router.push("/login")
-      } else if (user && pathname === "/login") {
-        // If logged in and on login page, redirect to dashboard
+      } else if (user && !user.emailVerified && pathname !== "/verify-email") {
+        // If logged in but email not verified, redirect to verification page
+        router.push("/verify-email")
+      } else if (user && user.emailVerified && pathname === "/verify-email") {
+        // If email is verified and on verify page, redirect to dashboard
         router.push("/")
+      } else if (user && pathname === "/login") {
+        // If logged in and on login page, redirect appropriately
+        if (user.emailVerified) {
+          router.push("/")
+        } else {
+          router.push("/verify-email")
+        }
       }
       setIsLoading(false)
     })
