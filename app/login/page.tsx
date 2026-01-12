@@ -174,6 +174,11 @@ export default function LoginPage() {
       await signInWithPopup(auth, provider)
       router.push("/")
     } catch (err: any) {
+      // Log error for debugging
+      console.error("Google Sign-In Error:", err)
+      console.error("Error Code:", err.code)
+      console.error("Error Message:", err.message)
+      
       // Handle Google Sign-In errors with user-friendly messages
       const errorCode = err.code
       
@@ -199,8 +204,14 @@ export default function LoginPage() {
         case 'auth/too-many-requests':
           setError("Too many failed attempts. Please try again later.")
           break
+        case 'auth/configuration-not-found':
+        case 'auth/operation-not-supported-in-this-environment':
+        case 'auth/unauthorized-domain':
+          setError("Google Sign-In is not properly configured. Please contact support or use email/password sign-in.")
+          break
         default:
-          setError("Failed to sign in with Google. Please try again.")
+          // Show the error code for debugging
+          setError(`Failed to sign in with Google. Error: ${errorCode || 'Unknown'}. Please try email/password sign-in or contact support.`)
       }
     } finally {
       setIsLoading(false)
