@@ -77,33 +77,53 @@ export default function LoginPage() {
           return
         }
 
+        console.log("Creating user account...")
         // Create new user account
         const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+        console.log("User account created successfully:", userCredential.user.email)
         
         // Update profile with display name
         if (displayName) {
+          console.log("Updating display name...")
           await updateProfile(userCredential.user, { displayName })
+          console.log("Display name updated successfully")
         }
 
         // Send verification email
-        await sendEmailVerification(userCredential.user)
+        try {
+          console.log("Sending verification email to:", userCredential.user.email)
+          await sendEmailVerification(userCredential.user)
+          console.log("Verification email sent successfully!")
+          
+          // Sign out the user immediately after signup
+          await auth.signOut()
+          
+          // Show success message
+          setSuccessMessage(`Account created! Please check your email (${email}) for a verification link. Don't forget to check your spam folder!`)
+          setEmail("")
+          setPassword("")
+          setConfirmPassword("")
+          setDisplayName("")
+          setIsSignUp(false)
+          setShowPasswordRequirements(false)
+          setShowPassword(false)
+          setShowConfirmPassword(false)
+        } catch (emailError: any) {
+          console.error("Failed to send verification email:", emailError)
+          console.error("Error code:", emailError.code)
+          console.error("Error message:", emailError.message)
+          
+          // Still sign out and inform the user
+          await auth.signOut()
+          
+          if (emailError.code === 'auth/too-many-requests') {
+            setError("Too many email requests. Please wait a few minutes and try signing in to resend the verification email.")
+          } else {
+            setError(`Account created but failed to send verification email: ${emailError.message}. Please contact support or try signing in to resend the email.`)
+          }
+        }
         
-        // Sign out the user immediately after signup
-        await auth.signOut()
-        
-        // Show success message
-        setSuccessMessage("Account created! Please check your email to verify your account before signing in.")
-        setEmail("")
-        setPassword("")
-        setConfirmPassword("")
-        setDisplayName("")
-        setIsSignUp(false)
-        setShowPasswordRequirements(false)
-        setShowPassword(false)
-        setShowConfirmPassword(false)
         setIsLoading(false)
-        
-        // Don't redirect, stay on login page to show success message
         return
       } else {
         // Sign In - check if email is verified
@@ -118,41 +138,37 @@ export default function LoginPage() {
         router.push("/")
       }
     } catch (err: any) {
-      // Handle Firebase authentication errors with user-friendly messages
-      const errorCode = err.code
+      console.error("Authentication error:", err)
+      console.error("Error code:", err.code)
+      console.error("Error message:", err.message)
       
-      switch (errorCode) {
+      // Enhanced error messages
+      switch (err.code) {
         case 'auth/invalid-credential':
         case 'auth/wrong-password':
         case 'auth/user-not-found':
           setError("Invalid email or password. Please check your credentials and try again.")
           break
-        case 'auth/invalid-email':
-          setError("Invalid email address. Please enter a valid email.")
-          break
-        case 'auth/user-disabled':
-          setError("This account has been disabled. Please contact support.")
-          break
         case 'auth/email-already-in-use':
-          setError("This email is already registered. Please sign in or use a different email.")
+          setError("This email is already registered. Please sign in instead or use a different email.")
           break
         case 'auth/weak-password':
-          setError("Password is too weak. Please use a stronger password.")
+          setError("Password is too weak. Please use a stronger password with at least 8 characters.")
+          break
+        case 'auth/invalid-email':
+          setError("Invalid email address format. Please check your email and try again.")
           break
         case 'auth/operation-not-allowed':
           setError("Email/password sign-in is not enabled. Please contact support.")
           break
         case 'auth/too-many-requests':
-          setError("Too many failed attempts. Please try again later or reset your password.")
+          setError("Too many failed attempts. Please wait a few minutes and try again.")
           break
         case 'auth/network-request-failed':
           setError("Network error. Please check your internet connection and try again.")
           break
-        case 'auth/popup-closed-by-user':
-          setError("Sign-in cancelled. Please try again.")
-          break
         default:
-          setError("An error occurred. Please try again.")
+          setError(err.message || "An error occurred. Please try again.")
       }
     } finally {
       setIsLoading(false)
@@ -174,44 +190,10 @@ export default function LoginPage() {
       await signInWithPopup(auth, provider)
       router.push("/")
     } catch (err: any) {
-      // Log error for debugging
-      console.error("Google Sign-In Error:", err)
-      console.error("Error Code:", err.code)
-      console.error("Error Message:", err.message)
-      
-      // Handle Google Sign-In errors with user-friendly messages
-      const errorCode = err.code
-      
-      switch (errorCode) {
-        case 'auth/popup-closed-by-user':
-          setError("Sign-in cancelled. Please try again.")
-          break
-        case 'auth/popup-blocked':
-          setError("Sign-in popup was blocked. Please allow popups for this site.")
-          break
-        case 'auth/cancelled-popup-request':
-          setError("Sign-in cancelled. Please try again.")
-          break
-        case 'auth/account-exists-with-different-credential':
-          setError("An account already exists with this email. Please sign in using your original method.")
-          break
-        case 'auth/network-request-failed':
-          setError("Network error. Please check your internet connection and try again.")
-          break
-        case 'auth/user-disabled':
-          setError("This account has been disabled. Please contact support.")
-          break
-        case 'auth/too-many-requests':
-          setError("Too many failed attempts. Please try again later.")
-          break
-        case 'auth/configuration-not-found':
-        case 'auth/operation-not-supported-in-this-environment':
-        case 'auth/unauthorized-domain':
-          setError("Google Sign-In is not properly configured. Please contact support or use email/password sign-in.")
-          break
-        default:
-          // Show the error code for debugging
-          setError(`Failed to sign in with Google. Error: ${errorCode || 'Unknown'}. Please try email/password sign-in or contact support.`)
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("Sign-in cancelled")
+      } else {
+        setError(err.message || "Failed to sign in with Google")
       }
     } finally {
       setIsLoading(false)
