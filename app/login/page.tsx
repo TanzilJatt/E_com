@@ -26,28 +26,9 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
-  const [showPasswordRequirements, setShowPasswordRequirements] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const router = useRouter()
-
-  // Password validation function
-  const validatePassword = (pwd: string) => {
-    return {
-      minLength: pwd.length >= 8,
-      hasUpperCase: /[A-Z]/.test(pwd),
-      hasLowerCase: /[a-z]/.test(pwd),
-      hasNumber: /[0-9]/.test(pwd),
-      hasSpecialChar: /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\\/;'`~]/.test(pwd),
-    }
-  }
-
-  const isPasswordValid = (pwd: string) => {
-    const validation = validatePassword(pwd)
-    return Object.values(validation).every(v => v === true)
-  }
-
-  const getPasswordValidation = () => validatePassword(password)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,13 +44,6 @@ export default function LoginPage() {
       }
 
       if (isSignUp) {
-        // Validate password strength
-        if (!isPasswordValid(password)) {
-          setError("Password does not meet the required criteria. Please check all requirements below.")
-          setIsLoading(false)
-          return
-        }
-
         // Validate password confirmation
         if (password !== confirmPassword) {
           setError("Passwords do not match. Please make sure both passwords are the same.")
@@ -77,61 +51,48 @@ export default function LoginPage() {
           return
         }
 
-        console.log("Creating user account...")
         // Create new user account
         const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-        console.log("User account created successfully:", userCredential.user.email)
         
         // Update profile with display name
         if (displayName) {
-          console.log("Updating display name...")
           await updateProfile(userCredential.user, { displayName })
-          console.log("Display name updated successfully")
         }
 
         // Send verification email
-        try {
-          console.log("Sending verification email to:", userCredential.user.email)
-          await sendEmailVerification(userCredential.user)
-          console.log("Verification email sent successfully!")
-          
-          // Sign out the user immediately after signup
-          await auth.signOut()
-          
-          // Show success message
-          setSuccessMessage(`Account created! Please check your email (${email}) for a verification link. Don't forget to check your spam folder!`)
-          setEmail("")
-          setPassword("")
-          setConfirmPassword("")
-          setDisplayName("")
-          setIsSignUp(false)
-          setShowPasswordRequirements(false)
-          setShowPassword(false)
-          setShowConfirmPassword(false)
-        } catch (emailError: any) {
-          console.error("Failed to send verification email:", emailError)
-          console.error("Error code:", emailError.code)
-          console.error("Error message:", emailError.message)
-          
-          // Still sign out and inform the user
-          await auth.signOut()
-          
-          if (emailError.code === 'auth/too-many-requests') {
-            setError("Too many email requests. Please wait a few minutes and try signing in to resend the verification email.")
-          } else {
-            setError(`Account created but failed to send verification email: ${emailError.message}. Please contact support or try signing in to resend the email.`)
-          }
-        }
+        await sendEmailVerification(userCredential.user)
         
+        // Sign out the user immediately after signup
+        await auth.signOut()
+        
+        // Show success message
+        setSuccessMessage("Account created! Please check your email (including spam folder) to verify your account before signing in.")
+        setEmail("")
+        setPassword("")
+        setConfirmPassword("")
+        setDisplayName("")
+        setIsSignUp(false)
+        setShowPassword(false)
+        setShowConfirmPassword(false)
         setIsLoading(false)
+        
+        // Don't redirect, stay on login page to show success message
         return
       } else {
         // Sign In - check if email is verified
         const userCredential = await signInWithEmailAndPassword(auth, email, password)
         
         if (!userCredential.user.emailVerified) {
-          setError("Please verify your email before signing in. Check your inbox for the verification link.")
+          // Resend verification email
+          try {
+            await sendEmailVerification(userCredential.user)
+            setSuccessMessage("Verification email sent! Please check your email (including spam folder) and click the verification link to activate your account.")
+          } catch (emailError: any) {
+            console.error("Failed to resend verification email:", emailError)
+            setError("Your email is not verified. We tried to resend the verification email but encountered an error. Please try again later.")
+          }
           await auth.signOut() // Sign out the user
+          setIsLoading(false)
           return
         }
         
@@ -139,8 +100,6 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error("Authentication error:", err)
-      console.error("Error code:", err.code)
-      console.error("Error message:", err.message)
       
       // Enhanced error messages
       switch (err.code) {
@@ -153,7 +112,7 @@ export default function LoginPage() {
           setError("This email is already registered. Please sign in instead or use a different email.")
           break
         case 'auth/weak-password':
-          setError("Password is too weak. Please use a stronger password with at least 8 characters.")
+          setError("Password is too weak. Please use a stronger password.")
           break
         case 'auth/invalid-email':
           setError("Invalid email address format. Please check your email and try again.")
@@ -177,6 +136,7 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     setError("")
+    setSuccessMessage("")
     setIsLoading(true)
 
     try {
@@ -190,10 +150,16 @@ export default function LoginPage() {
       await signInWithPopup(auth, provider)
       router.push("/")
     } catch (err: any) {
+      console.error("Google Sign-In Error:", err)
+      
       if (err.code === 'auth/popup-closed-by-user') {
         setError("Sign-in cancelled")
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError("This domain is not authorized for Google Sign-In. Please contact support or use email/password sign-in.")
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError("Sign-in cancelled")
       } else {
-        setError(err.message || "Failed to sign in with Google")
+        setError("Failed to sign in with Google. Please try again or use email/password sign-in.")
       }
     } finally {
       setIsLoading(false)
@@ -248,7 +214,6 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => isSignUp && setShowPasswordRequirements(true)}
                   required
                   className="pr-10"
                 />
@@ -269,35 +234,6 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
-              
-              {/* Password Requirements - Show only during signup */}
-              {isSignUp && showPasswordRequirements && (
-                <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <p className="text-xs font-medium mb-2 text-gray-700 dark:text-gray-300">Password Requirements:</p>
-                  <div className="space-y-1">
-                    <PasswordRequirement 
-                      met={getPasswordValidation().minLength} 
-                      text="At least 8 characters" 
-                    />
-                    <PasswordRequirement 
-                      met={getPasswordValidation().hasUpperCase} 
-                      text="One uppercase letter (A-Z)" 
-                    />
-                    <PasswordRequirement 
-                      met={getPasswordValidation().hasLowerCase} 
-                      text="One lowercase letter (a-z)" 
-                    />
-                    <PasswordRequirement 
-                      met={getPasswordValidation().hasNumber} 
-                      text="One number (0-9)" 
-                    />
-                    <PasswordRequirement 
-                      met={getPasswordValidation().hasSpecialChar} 
-                      text="One special character (!@#$%^&* etc.)" 
-                    />
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Confirm Password - Show only during signup */}
@@ -406,26 +342,6 @@ export default function LoginPage() {
           </div>
         </div>
       </Card>
-    </div>
-  )
-}
-
-// Helper component for password requirements
-function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      {met ? (
-        <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-      ) : (
-        <svg className="w-4 h-4 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      )}
-      <span className={`text-xs ${met ? 'text-green-700 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>
-        {text}
-      </span>
     </div>
   )
 }
