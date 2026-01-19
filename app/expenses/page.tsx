@@ -306,15 +306,15 @@ function ExpensesContent() {
                   value={formData.name}
                   onChange={(e) => {
                     const value = e.target.value
-                    // Only allow letters and spaces, max 30 characters
-                    if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                    // Only allow letters, numbers, and spaces, max 30 characters
+                    if (value.length <= 30 && /^[a-zA-Z0-9\s]*$/.test(value)) {
                       setFormData({ ...formData, name: value })
                     }
                   }}
                   required
                 />
                 {/* <p className="text-xs text-muted-foreground mt-1">
-                  {formData.name.length}/30 characters (letters and spaces only)
+                  {formData.name.length}/30 characters (letters, numbers, and spaces only)
                 </p> */}
               </div>
               <div>

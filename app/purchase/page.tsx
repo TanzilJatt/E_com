@@ -128,8 +128,6 @@ function PurchaseContent() {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter((purchase) =>
-        purchase.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (purchase.supplierContact && purchase.supplierContact.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (purchase.notes && purchase.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
         purchase.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
       )
@@ -181,7 +179,7 @@ function PurchaseContent() {
       return
     }
 
-    const qty = parseInt(quantity)
+    let qty = parseInt(quantity)
     let cost: number
     let totalCost: number
 
@@ -189,10 +187,12 @@ function PurchaseContent() {
       cost = parseFloat(unitCost)
       totalCost = qty * cost
     } else {
-      // Bulk pricing - price is for 12 items
+      // Bulk pricing - multiply quantity by 12
       const bulk = parseFloat(bulkPrice)
+      const actualQuantity = qty * 12 // Multiply by 12 for bulk
       cost = bulk / 12 // Calculate per unit cost
-      totalCost = (qty / 12) * bulk // Calculate total based on bulk units
+      totalCost = qty * bulk // Total cost = number of bulk units * bulk price
+      qty = actualQuantity // Update qty to actual quantity
     }
 
     const cartItem: CartItem = {
@@ -270,14 +270,18 @@ function PurchaseContent() {
       // Calculate cost based on pricing type
       let cost: number
       let totalCost: number
+      let finalQuantity: number
 
       if (newItem.pricingType === "unit") {
         cost = unitCostValue
         totalCost = qty * cost
+        finalQuantity = qty
       } else {
-        // Bulk pricing - price is for 12 items
+        // Bulk pricing - multiply quantity by 12
+        const actualQuantity = qty * 12 // Multiply by 12 for bulk
         cost = bulkPriceValue / 12 // Calculate per unit cost
-        totalCost = (qty / 12) * bulkPriceValue // Calculate total based on bulk units
+        totalCost = qty * bulkPriceValue // Total cost = number of bulk units * bulk price
+        finalQuantity = actualQuantity
       }
 
       // Add to cart with auto-generated SKU
@@ -285,7 +289,7 @@ function PurchaseContent() {
         itemId: itemId,
         itemName: newItem.itemName,
         sku: "Auto-generated", // Will be replaced with actual SKU
-        quantity: qty,
+        quantity: finalQuantity,
         unitCost: cost,
         totalCost: totalCost,
         pricingType: newItem.pricingType,
@@ -657,7 +661,9 @@ function PurchaseContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Quantity </label>
+                    <label className="block text-sm font-medium mb-2">
+                      Quantity {existingItemPricingType === "bulk" && "(Number of Bulk Units)"}
+                    </label>
                     <Input
                       type="text"
                       value={quantity}
@@ -672,6 +678,11 @@ function PurchaseContent() {
                       placeholder={quantity ? "" : "0.00"}
                       disabled={isSubmitting}
                     />
+                    {existingItemPricingType === "bulk" && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        ℹ️ Will add {quantity ? `${parseInt(quantity) * 12}` : "0"} items (Quantity × 12)
+                      </p>
+                    )}
                   </div>
                   {existingItemPricingType === "unit" ? (
                     <div>
@@ -715,7 +726,7 @@ function PurchaseContent() {
                 {existingItemPricingType === "bulk" && (
                   <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     <p className="text-sm text-blue-800 dark:text-blue-300">
-                      ℹ️ <strong>Bulk Pricing:</strong> Enter the total price for 12 items. The system will automatically calculate the per-unit cost.
+                      ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
                     </p>
                   </div>
                 )}
@@ -757,8 +768,8 @@ function PurchaseContent() {
                       value={newItem.itemName}
                       onChange={(e) => {
                         const value = e.target.value
-                        // Only allow letters and spaces, max 30 characters
-                        if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                        // Only allow letters, numbers, and spaces, max 30 characters
+                        if (value.length <= 30 && /^[a-zA-Z0-9\s]*$/.test(value)) {
                           setNewItem({ ...newItem, itemName: value })
                         }
                       }}
@@ -766,13 +777,16 @@ function PurchaseContent() {
                       disabled={isSubmitting}
                     />
                     {/* <p className="text-xs text-muted-foreground mt-1">
-                      {newItem.itemName.length}/30 characters (letters and spaces only)
+                      {newItem.itemName.length}/30 characters (letters, numbers, and spaces only)
                     </p> */}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Purchase Quantity <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium mb-2">
+                        Purchase Quantity <span className="text-red-500">*</span> 
+                        {newItem.pricingType === "bulk" && " (Number of Bulk Units)"}
+                      </label>
                       <Input
                         type="text"
                         value={newItem.quantity}
@@ -787,10 +801,15 @@ function PurchaseContent() {
                         placeholder={newItem.quantity ? "" : "0.00"}
                         disabled={isSubmitting}
                       />
+                      {newItem.pricingType === "bulk" && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                          ℹ️ Will add {newItem.quantity ? `${parseFloat(newItem.quantity) * 12}` : "0"} items (Quantity × 12)
+                        </p>
+                      )}
                     </div>
                     {newItem.pricingType === "unit" ? (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Unit Cost (RS) * (Numbers only)</label>
+                        <label className="block text-sm font-medium mb-2">Unit Cost (RS) <span className="text-red-500">*</span></label>  
                         <Input
                           type="text"
                           value={newItem.unitCost}
@@ -830,7 +849,7 @@ function PurchaseContent() {
                   {newItem.pricingType === "bulk" && (
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                       <p className="text-sm text-blue-800 dark:text-blue-300">
-                        ℹ️ <strong>Bulk Pricing:</strong> Enter the total price for 12 items. The system will automatically calculate the per-unit cost.
+                        ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
                       </p>
                     </div>
                   )}
@@ -841,8 +860,8 @@ function PurchaseContent() {
                       value={newItem.vendor}
                       onChange={(e) => {
                         const value = e.target.value
-                        // Only allow letters and spaces, max 30 characters
-                        if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
+                        // Only allow letters, numbers, and spaces, max 30 characters
+                        if (value.length <= 30 && /^[a-zA-Z0-9\s]*$/.test(value)) {
                           setNewItem({ ...newItem, vendor: value })
                         }
                       }}
@@ -850,7 +869,7 @@ function PurchaseContent() {
                       disabled={isSubmitting}
                     />
                     {/* <p className="text-xs text-muted-foreground mt-1">
-                      {newItem.vendor.length}/30 characters (letters and spaces only)
+                      {newItem.vendor.length}/30 characters (letters, numbers, and spaces only)
                     </p> */}
                   </div>
 
