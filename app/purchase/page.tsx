@@ -77,6 +77,9 @@ function PurchaseContent() {
   // Edit and Delete states
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  
+  // Add to cart loading states
+  const [isAddingToCart, setIsAddingToCart] = useState(false)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -179,43 +182,54 @@ function PurchaseContent() {
       return
     }
 
-    let qty = parseInt(quantity)
-    let cost: number
-    let totalCost: number
+    setIsAddingToCart(true)
 
-    if (existingItemPricingType === "unit") {
-      cost = parseFloat(unitCost)
-      totalCost = qty * cost
-    } else {
-      // Bulk pricing - multiply quantity by 12
-      const bulk = parseFloat(bulkPrice)
-      const actualQuantity = qty * 12 // Multiply by 12 for bulk
-      cost = bulk / 12 // Calculate per unit cost
-      totalCost = qty * bulk // Total cost = number of bulk units * bulk price
-      qty = actualQuantity // Update qty to actual quantity
-    }
+    try {
+      let qty = parseInt(quantity)
+      let cost: number
+      let totalCost: number
 
-    const cartItem: CartItem = {
-      itemId: item.id,
-      itemName: item.name,
-      sku: item.sku,
-      quantity: qty,
-      unitCost: cost,
-      totalCost: totalCost,
-      pricingType: existingItemPricingType,
-    }
-    
-    // Only add bulkPrice if it's defined
-    if (existingItemPricingType === "bulk" && bulkPrice) {
-      cartItem.bulkPrice = parseFloat(bulkPrice)
-    }
+      if (existingItemPricingType === "unit") {
+        cost = parseFloat(unitCost)
+        totalCost = qty * cost
+      } else {
+        // Bulk pricing - multiply quantity by 12
+        const bulk = parseFloat(bulkPrice)
+        const actualQuantity = qty * 12 // Multiply by 12 for bulk
+        cost = bulk / 12 // Calculate per unit cost
+        totalCost = qty * bulk // Total cost = number of bulk units * bulk price
+        qty = actualQuantity // Update qty to actual quantity
+      }
 
-    setCart([...cart, cartItem])
-    setSelectedItem("")
-    setQuantity("")
-    setUnitCost("")
-    setBulkPrice("")
-    setError("")
+      const cartItem: CartItem = {
+        itemId: item.id,
+        itemName: item.name,
+        sku: item.sku,
+        quantity: qty,
+        unitCost: cost,
+        totalCost: totalCost,
+        pricingType: existingItemPricingType,
+      }
+      
+      // Only add bulkPrice if it's defined
+      if (existingItemPricingType === "bulk" && bulkPrice) {
+        cartItem.bulkPrice = parseFloat(bulkPrice)
+      }
+
+      // Small delay to show loading state
+      setTimeout(() => {
+        setCart([...cart, cartItem])
+        setSelectedItem("")
+        setQuantity("")
+        setUnitCost("")
+        setBulkPrice("")
+        setError("")
+        setIsAddingToCart(false)
+      }, 300)
+    } catch (err) {
+      setError("Failed to add item to cart")
+      setIsAddingToCart(false)
+    }
   }
 
   const handleAddNewItem = async () => {
@@ -239,6 +253,8 @@ function PurchaseContent() {
       setError("Please enter bulk price (12 items)")
       return
     }
+
+    setIsAddingToCart(true)
 
     try {
       // Calculate cost based on pricing type for the selling price
@@ -319,10 +335,14 @@ function PurchaseContent() {
       // Refresh items list
       await fetchItems()
 
-      setTimeout(() => setSuccess(""), 3000)
+      setTimeout(() => {
+        setSuccess("")
+        setIsAddingToCart(false)
+      }, 300)
     } catch (err) {
       console.error("Error adding new item:", err)
       setError("Failed to add new item")
+      setIsAddingToCart(false)
     }
   }
 
@@ -701,6 +721,11 @@ function PurchaseContent() {
                         placeholder={unitCost ? "" : "0.00"}
                         disabled={isSubmitting}
                       />
+                      {quantity && unitCost && (
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
+                          💰 Total: RS {(parseInt(quantity) * parseFloat(unitCost)).toFixed(2)}
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -719,6 +744,11 @@ function PurchaseContent() {
                         placeholder={bulkPrice ? "" : "0.00"}
                         disabled={isSubmitting}
                       />
+                      {quantity && bulkPrice && (
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
+                          💰 Total: RS {(parseInt(quantity) * parseFloat(bulkPrice)).toFixed(2)}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -731,8 +761,18 @@ function PurchaseContent() {
                   </div>
                 )}
 
-                <Button onClick={handleAddExistingItem} className="mt-4" disabled={isSubmitting}>
-                  Add to Cart
+                <Button onClick={handleAddExistingItem} className="mt-4" disabled={isSubmitting || isAddingToCart}>
+                  {isAddingToCart ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Adding...
+                    </>
+                  ) : (
+                    "Add to Cart"
+                  )}
                 </Button>
               </Card>
             ) : (
@@ -785,7 +825,6 @@ function PurchaseContent() {
                     <div>
                       <label className="block text-sm font-medium mb-2">
                         Purchase Quantity <span className="text-red-500">*</span> 
-                        {newItem.pricingType === "bulk" && " (Number of Bulk Units)"}
                       </label>
                       <Input
                         type="text"
@@ -824,6 +863,11 @@ function PurchaseContent() {
                           placeholder={newItem.unitCost ? "" : "0.00"}
                           disabled={isSubmitting}
                         />
+                        {newItem.quantity && newItem.unitCost && (
+                          <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
+                            💰 Total: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.unitCost)).toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div>
@@ -842,6 +886,11 @@ function PurchaseContent() {
                           placeholder={newItem.bulkPrice ? "" : "0.00"}
                           disabled={isSubmitting}
                         />
+                        {newItem.quantity && newItem.bulkPrice && (
+                          <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
+                            💰 Total: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.bulkPrice)).toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -899,8 +948,18 @@ function PurchaseContent() {
                     </p>
                   </div> */}
                 </div>
-                <Button onClick={handleAddNewItem} className="mt-4" disabled={isSubmitting}>
-                  Add to Cart & Inventory
+                <Button onClick={handleAddNewItem} className="mt-4" disabled={isSubmitting || isAddingToCart}>
+                  {isAddingToCart ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Adding...
+                    </>
+                  ) : (
+                    "Add to Cart & Inventory"
+                  )}
                 </Button>
               </Card>
             )}
