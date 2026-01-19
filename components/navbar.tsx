@@ -2,8 +2,8 @@
 
 import { useRouter, usePathname } from "next/navigation"
 import { auth } from "@/lib/firebase"
-import { signOut } from "firebase/auth"
-import { useState } from "react"
+import { signOut, onAuthStateChanged } from "firebase/auth"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
@@ -11,6 +11,38 @@ export function Navbar() {
   const router = useRouter()
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
+  const [userName, setUserName] = useState<string>("")
+  const [userInitial, setUserInitial] = useState<string>("U")
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Get user's display name from either email/password signup or Google Sign-In
+        const name = user.displayName || user.email?.split("@")[0] || "User"
+        setUserName(name)
+        
+        // Get first letter of name for the profile icon
+        const initial = name.charAt(0).toUpperCase()
+        setUserInitial(initial)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const isActive = (path: string) => {
     if (path === "/") {
@@ -21,11 +53,17 @@ export function Navbar() {
 
   const handleLogout = async () => {
     try {
+      setIsProfileDropdownOpen(false)
       await signOut(auth)
       router.push("/login")
     } catch (error) {
       console.error("Error logging out:", error)
     }
+  }
+
+  const handleEditProfile = () => {
+    setIsProfileDropdownOpen(false)
+    router.push("/profile")
   }
 
   return (
@@ -107,6 +145,63 @@ export function Navbar() {
             </Link> */}
           </div>
 
+          {/* Desktop Profile Section */}
+          <div className="hidden md:flex items-center relative" ref={dropdownRef}>
+            {/* Profile Button - Clickable */}
+            <button
+              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+            >
+              <div className="w-9 h-9 bg-primary rounded-full flex items-center justify-center">
+                <span className="text-primary-foreground font-semibold text-sm">{userInitial}</span>
+              </div>
+              <span className="text-sm font-medium text-foreground hidden lg:inline">{userName}</span>
+              {/* Dropdown Arrow */}
+              <svg
+                className={`w-4 h-4 text-muted-foreground transition-transform ${isProfileDropdownOpen ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isProfileDropdownOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-lg shadow-lg py-2 z-50">
+                {/* User Info Header */}
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-sm font-semibold text-foreground">{userName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{auth.currentUser?.email}</p>
+                </div>
+
+                {/* Menu Items */}
+                <div className="py-1">
+                  <button
+                    onClick={handleEditProfile}
+                    className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted transition-colors flex items-center gap-3"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Edit Profile
+                  </button>
+
+                  <button
+                    onClick={handleLogout}
+                    className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-muted transition-colors flex items-center gap-3"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Logout
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Mobile menu button */}
           <div className="flex items-center gap-2 md:hidden">
             <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-foreground hover:bg-muted rounded-lg">
@@ -116,16 +211,22 @@ export function Navbar() {
               </svg>
             </button>
           </div>
-
-          {/* Logout button */}
-          <Button onClick={handleLogout} variant="outline" size="sm" className="hidden sm:inline-flex bg-transparent">
-            Logout
-          </Button>
         </div>
 
         {/* Mobile Navigation */}
         {isOpen && (
           <div className="md:hidden pb-4 space-y-2">
+            {/* Mobile Profile Section */}
+            <div className="flex items-center gap-3 px-3 py-3 bg-muted/50 rounded-lg mb-2">
+              <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+                <span className="text-primary-foreground font-semibold">{userInitial}</span>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">{userName}</p>
+                <p className="text-xs text-muted-foreground">{auth.currentUser?.email}</p>
+              </div>
+            </div>
+            
             <Link href="/">
               <Button 
                 variant={isActive("/") ? "secondary" : "ghost"} 
@@ -189,9 +290,24 @@ export function Navbar() {
                 Activity
               </Button>
             </Link> */}
-            <Button onClick={handleLogout} variant="outline" size="sm" className="w-full justify-start bg-transparent">
-              Logout
-            </Button>
+            
+            {/* Profile Actions */}
+            <div className="border-t border-border pt-2 mt-2 space-y-2">
+              <Link href="/profile">
+                <Button variant="ghost" size="sm" className="w-full justify-start">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Edit Profile
+                </Button>
+              </Link>
+              <Button onClick={handleLogout} variant="outline" size="sm" className="w-full justify-start bg-transparent text-red-600 dark:text-red-400 border-red-200 dark:border-red-900">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Logout
+              </Button>
+            </div>
           </div>
         )}
       </div>

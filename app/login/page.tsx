@@ -188,7 +188,7 @@ export default function LoginPage() {
       }
 
       await sendPasswordResetEmail(auth, email)
-      setSuccessMessage("Password reset email sent! Please check your email (including spam folder) for instructions to reset your password.")
+      setSuccessMessage("Password reset email sent! Please check your email.")
       setEmail("")
       setIsForgotPassword(false)
     } catch (err: any) {
@@ -267,7 +267,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Input
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
+                    placeholder="Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -317,7 +317,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <Input
                     type={showConfirmPassword ? "text" : "password"}
-                    placeholder="••••••••"
+                    placeholder="Confirm Password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required={isSignUp}

@@ -299,10 +299,10 @@ function ExpensesContent() {
             <h2 className="text-xl font-semibold mb-4">{editingId ? "Edit Expense" : "Add New Expense"}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Expense Name * (Max 30 characters)</label>
+                <label className="block text-sm font-medium mb-1">Expense Name <span className="text-red-500">*</span></label>
                 <Input
                   type="text"
-                  placeholder={formData.name ? "" : "e.g., Office Rent (letters and spaces only)"}
+                  placeholder={formData.name ? "" : "e.g., Office Rent"}
                   value={formData.name}
                   onChange={(e) => {
                     const value = e.target.value
@@ -313,12 +313,12 @@ function ExpensesContent() {
                   }}
                   required
                 />
-                <p className="text-xs text-muted-foreground mt-1">
+                {/* <p className="text-xs text-muted-foreground mt-1">
                   {formData.name.length}/30 characters (letters and spaces only)
-                </p>
+                </p> */}
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Category *</label>
+                <label className="block text-sm font-medium mb-1">Category <span className="text-red-500">*</span></label>
                 <select
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -333,7 +333,7 @@ function ExpensesContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Amount (RS) *</label>
+                <label className="block text-sm font-medium mb-1">Amount (RS) <span className="text-red-500">*</span></label>
                 <Input
                   type="number"
                   placeholder={formData.amount > 0 ? "" : "0.00"}
@@ -345,7 +345,7 @@ function ExpensesContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Date *</label>
+                <label className="block text-sm font-medium mb-1">Date <span className="text-red-500">*</span></label>
                 <Input
                   type="date"
                   value={formData.date}
@@ -354,7 +354,7 @@ function ExpensesContent() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Description (Max 100 characters)</label>
+                <label className="block text-sm font-medium mb-1">Description </label>
                 <textarea
                   placeholder={formData.description ? "" : "Additional notes..."}
                   value={formData.description}
@@ -368,9 +368,9 @@ function ExpensesContent() {
                   className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
                   rows={3}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
+                {/* <p className="text-xs text-muted-foreground mt-1">
                   {formData.description.length}/100 characters
-                </p>
+                </p> */}
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
               <div className="md:col-span-2 flex gap-2">

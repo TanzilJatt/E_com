@@ -51,9 +51,7 @@ function PurchaseContent() {
   const [pricingTypeFilter, setPricingTypeFilter] = useState<"all" | "unit" | "bulk">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
-  // Supplier details
-  const [supplierName, setSupplierName] = useState("")
-  const [supplierContact, setSupplierContact] = useState("")
+  // Purchase details
   const [notes, setNotes] = useState("")
 
   // Existing item purchase
@@ -205,7 +203,11 @@ function PurchaseContent() {
       unitCost: cost,
       totalCost: totalCost,
       pricingType: existingItemPricingType,
-      bulkPrice: existingItemPricingType === "bulk" ? parseFloat(bulkPrice) : undefined,
+    }
+    
+    // Only add bulkPrice if it's defined
+    if (existingItemPricingType === "bulk" && bulkPrice) {
+      cartItem.bulkPrice = parseFloat(bulkPrice)
     }
 
     setCart([...cart, cartItem])
@@ -287,7 +289,11 @@ function PurchaseContent() {
         unitCost: cost,
         totalCost: totalCost,
         pricingType: newItem.pricingType,
-        bulkPrice: newItem.pricingType === "bulk" ? bulkPriceValue : undefined,
+      }
+      
+      // Only add bulkPrice if it's defined
+      if (newItem.pricingType === "bulk" && bulkPriceValue) {
+        cartItem.bulkPrice = bulkPriceValue
       }
 
       setCart([...cart, cartItem])
@@ -330,16 +336,6 @@ function PurchaseContent() {
     // Prevent multiple submissions
     if (isSubmitting) return
 
-    if (!supplierName) {
-      setError("Please enter supplier name")
-      return
-    }
-
-    if (supplierContact && supplierContact.length < 11) {
-      setError("Contact number must be at least 11 digits")
-      return
-    }
-
     if (cart.length === 0) {
       setError("Please add items to purchase")
       return
@@ -350,8 +346,8 @@ function PurchaseContent() {
       setError("")
       
       await createPurchase(userId, {
-        supplierName,
-        supplierContact,
+        supplierName: "",
+        supplierContact: "",
         items: cart,
         totalAmount: calculateTotal(),
         notes,
@@ -361,8 +357,6 @@ function PurchaseContent() {
       
       // Reset form
       setCart([])
-      setSupplierName("")
-      setSupplierContact("")
       setNotes("")
 
       // Refresh purchases and items lists
@@ -382,8 +376,6 @@ function PurchaseContent() {
 
   const handleEditPurchase = (purchase: Purchase) => {
     // Load purchase data into form
-    setSupplierName(purchase.supplierName)
-    setSupplierContact(purchase.supplierContact || "")
     setNotes(purchase.notes || "")
     setCart(purchase.items as CartItem[])
     setEditingPurchaseId(purchase.id)
@@ -398,16 +390,6 @@ function PurchaseContent() {
     // Prevent multiple submissions
     if (isSubmitting) return
 
-    if (!supplierName) {
-      setError("Please enter supplier name")
-      return
-    }
-
-    if (supplierContact && supplierContact.length < 11) {
-      setError("Contact number must be at least 11 digits")
-      return
-    }
-
     if (cart.length === 0) {
       setError("Please add items to purchase")
       return
@@ -418,8 +400,8 @@ function PurchaseContent() {
       setError("")
       
       await updatePurchase(editingPurchaseId, {
-        supplierName,
-        supplierContact,
+        supplierName: "",
+        supplierContact: "",
         items: cart,
         totalAmount: calculateTotal(),
         notes,
@@ -429,8 +411,6 @@ function PurchaseContent() {
       
       // Reset form
       setCart([])
-      setSupplierName("")
-      setSupplierContact("")
       setNotes("")
       setEditingPurchaseId(null)
 
@@ -452,8 +432,6 @@ function PurchaseContent() {
   const handleCancelEdit = () => {
     setEditingPurchaseId(null)
     setCart([])
-    setSupplierName("")
-    setSupplierContact("")
     setNotes("")
     setError("")
     setSuccess("")
@@ -518,8 +496,6 @@ function PurchaseContent() {
       return [
         `#${purchase.id?.slice(0, 8) || "N/A"}`,
         purchaseDate.toLocaleDateString(),
-        purchase.supplierName,
-        purchase.supplierContact || "-",
         itemsList,
         `RS ${purchase.totalAmount.toFixed(2)}`
       ]
@@ -528,18 +504,16 @@ function PurchaseContent() {
     // Add table
     autoTable(doc, {
       startY: filterInfo.length > 0 ? 42 : 36,
-      head: [["ID", "Date", "Supplier", "Contact", "Items", "Total"]],
+      head: [["ID", "Date", "Items", "Total"]],
       body: tableData,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [59, 130, 246], textColor: 255 },
       columnStyles: {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 25 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 25 },
-        4: { cellWidth: 55 },
-        5: { cellWidth: 25 }
+        0: { cellWidth: 25 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 90 },
+        3: { cellWidth: 35 }
       }
     })
     
@@ -637,55 +611,6 @@ function PurchaseContent() {
               </div>
             </Card>
 
-            {/* Supplier Details */}
-            <Card className="p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4">Supplier Information</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Supplier Name * (Max 30 characters)</label>
-                  <Input
-                    value={supplierName}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      // Only allow letters and spaces, max 30 characters
-                      if (value.length <= 30 && /^[a-zA-Z\s]*$/.test(value)) {
-                        setSupplierName(value)
-                      }
-                    }}
-                    placeholder={supplierName ? "" : "Enter supplier name (letters and spaces only)"}
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {supplierName.length}/30 characters (letters and spaces only)
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Contact Number (Optional, Min 11, Max 15 digits)</label>
-                  <Input
-                    value={supplierContact}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      // Only allow numbers, max 15 characters
-                      if (value.length <= 15 && /^\d*$/.test(value)) {
-                        setSupplierContact(value)
-                      }
-                    }}
-                    placeholder={supplierContact ? "" : "Enter phone number (numbers only)"}
-                    disabled={isSubmitting}
-                    maxLength={15}
-                  />
-                  <p className={`text-xs mt-1 ${
-                    supplierContact.length > 0 && supplierContact.length < 11 
-                      ? "text-red-500 dark:text-red-400" 
-                      : "text-muted-foreground"
-                  }`}>
-                    {supplierContact.length}/15 digits (numbers only)
-                    {supplierContact.length > 0 && supplierContact.length < 11 && " - minimum 11 required"}
-                  </p>
-                </div>
-              </div>
-            </Card>
-
             {/* Add Items Section */}
             {mode === "existing" ? (
               <Card className="p-6 mb-6">
@@ -732,7 +657,7 @@ function PurchaseContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Quantity (Numbers only)</label>
+                    <label className="block text-sm font-medium mb-2">Quantity </label>
                     <Input
                       type="text"
                       value={quantity}
@@ -750,7 +675,7 @@ function PurchaseContent() {
                   </div>
                   {existingItemPricingType === "unit" ? (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Unit Cost (RS) (Numbers only)</label>
+                      <label className="block text-sm font-medium mb-2">Unit Cost (RS) </label>
                       <Input
                         type="text"
                         value={unitCost}
@@ -768,7 +693,7 @@ function PurchaseContent() {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) (Numbers only)</label>
+                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS)</label>
                       <Input
                         type="text"
                         value={bulkPrice}
@@ -827,7 +752,7 @@ function PurchaseContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Item Name * (Max 30 characters)</label>
+                    <label className="block text-sm font-medium mb-2">Item Name <span className="text-red-500">*</span></label>
                     <Input
                       value={newItem.itemName}
                       onChange={(e) => {
@@ -837,17 +762,17 @@ function PurchaseContent() {
                           setNewItem({ ...newItem, itemName: value })
                         }
                       }}
-                      placeholder={newItem.itemName ? "" : "Enter item name (letters and spaces only)"}
+                      placeholder={newItem.itemName ? "" : "Enter item name"}
                       disabled={isSubmitting}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    {/* <p className="text-xs text-muted-foreground mt-1">
                       {newItem.itemName.length}/30 characters (letters and spaces only)
-                    </p>
+                    </p> */}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Purchase Quantity * (Numbers only)</label>
+                      <label className="block text-sm font-medium mb-2">Purchase Quantity <span className="text-red-500">*</span></label>
                       <Input
                         type="text"
                         value={newItem.quantity}
@@ -883,7 +808,7 @@ function PurchaseContent() {
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) * (Numbers only)</label>
+                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) <span className="text-red-500">*</span></label>
                         <Input
                           type="text"
                           value={newItem.bulkPrice}
@@ -911,7 +836,7 @@ function PurchaseContent() {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Vendor Name (Optional, Max 30 characters)</label>
+                    <label className="block text-sm font-medium mb-2">Vendor Name</label>
                     <Input
                       value={newItem.vendor}
                       onChange={(e) => {
@@ -921,16 +846,16 @@ function PurchaseContent() {
                           setNewItem({ ...newItem, vendor: value })
                         }
                       }}
-                      placeholder={newItem.vendor ? "" : "Enter vendor name (letters and spaces only)"}
+                      placeholder={newItem.vendor ? "" : "Enter vendor name"}
                       disabled={isSubmitting}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    {/* <p className="text-xs text-muted-foreground mt-1">
                       {newItem.vendor.length}/30 characters (letters and spaces only)
-                    </p>
+                    </p> */}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Description (Optional, Max 100 characters)</label>
+                    <label className="block text-sm font-medium mb-2">Description </label>
                     <Textarea
                       value={newItem.description}
                       onChange={(e) => {
@@ -944,16 +869,16 @@ function PurchaseContent() {
                       rows={3}
                       disabled={isSubmitting}
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    {/* <p className="text-xs text-muted-foreground mt-1">
                       {newItem.description.length}/100 characters
-                    </p>
+                    </p> */}
                   </div>
 
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  {/* <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                     <p className="text-sm text-blue-800 dark:text-blue-300">
                       ℹ️ <strong>Note:</strong> SKU will be auto-generated. This item will be automatically added to your inventory.
                     </p>
-                  </div>
+                  </div> */}
                 </div>
                 <Button onClick={handleAddNewItem} className="mt-4" disabled={isSubmitting}>
                   Add to Cart & Inventory
@@ -1130,7 +1055,7 @@ function PurchaseContent() {
                     <Card key={purchase.id} className="p-4 border-2">
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <h3 className="font-semibold text-lg">{purchase.supplierName}</h3>
+                          <h3 className="font-semibold text-lg">Purchase #{purchase.id.slice(0, 8)}</h3>
                           <p className="text-sm text-muted-foreground">
                             {purchaseDate.toLocaleDateString("en-GB", {
                               day: "2-digit",
@@ -1138,9 +1063,6 @@ function PurchaseContent() {
                               year: "numeric",
                             })}
                           </p>
-                          {purchase.supplierContact && (
-                            <p className="text-sm text-muted-foreground">Contact: {purchase.supplierContact}</p>
-                          )}
                         </div>
                         <div className="text-right flex flex-col items-end gap-2">
                           <div>
@@ -1205,7 +1127,7 @@ function PurchaseContent() {
                           <Card className="p-6 max-w-md mx-4">
                             <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
                             <p className="text-muted-foreground mb-6">
-                              Are you sure you want to delete this purchase from <strong>{purchase.supplierName}</strong>? 
+                              Are you sure you want to delete this purchase? 
                               This will also adjust the inventory quantities. This action cannot be undone.
                             </p>
                             <div className="flex gap-4">

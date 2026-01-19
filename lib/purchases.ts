@@ -70,12 +70,34 @@ export async function createPurchase(
       }
     }
 
+    // Clean items to remove undefined values (Firebase doesn't allow undefined)
+    const cleanedItems = purchaseData.items.map(item => {
+      const cleanItem: any = {
+        itemId: item.itemId,
+        itemName: item.itemName,
+        sku: item.sku,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        totalCost: item.totalCost,
+      }
+      
+      // Only add optional fields if they're defined
+      if (item.pricingType !== undefined) {
+        cleanItem.pricingType = item.pricingType
+      }
+      if (item.bulkPrice !== undefined) {
+        cleanItem.bulkPrice = item.bulkPrice
+      }
+      
+      return cleanItem
+    })
+
     // Create purchase record
     const purchaseRef = await addDoc(collection(db, "purchases"), {
       userId,
       supplierName: purchaseData.supplierName,
       supplierContact: purchaseData.supplierContact || "",
-      items: purchaseData.items,
+      items: cleanedItems,
       totalAmount: purchaseData.totalAmount,
       notes: purchaseData.notes || "",
       purchaseDate: serverTimestamp(),
@@ -86,7 +108,7 @@ export async function createPurchase(
     await addDoc(collection(db, "activityLogs"), {
       userId,
       action: "Purchase Recorded",
-      description: `Purchased ${purchaseData.items.length} items from ${purchaseData.supplierName}`,
+      description: `Purchased ${purchaseData.items.length} items`,
       timestamp: serverTimestamp(),
     })
 
@@ -236,11 +258,33 @@ export async function updatePurchase(
       }
     }
 
+    // Clean items to remove undefined values (Firebase doesn't allow undefined)
+    const cleanedItems = purchaseData.items.map(item => {
+      const cleanItem: any = {
+        itemId: item.itemId,
+        itemName: item.itemName,
+        sku: item.sku,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        totalCost: item.totalCost,
+      }
+      
+      // Only add optional fields if they're defined
+      if (item.pricingType !== undefined) {
+        cleanItem.pricingType = item.pricingType
+      }
+      if (item.bulkPrice !== undefined) {
+        cleanItem.bulkPrice = item.bulkPrice
+      }
+      
+      return cleanItem
+    })
+
     // Update purchase record
     await updateDoc(purchaseRef, {
       supplierName: purchaseData.supplierName,
       supplierContact: purchaseData.supplierContact || "",
-      items: purchaseData.items,
+      items: cleanedItems,
       totalAmount: purchaseData.totalAmount,
       notes: purchaseData.notes || "",
       updatedAt: serverTimestamp(),
@@ -250,7 +294,7 @@ export async function updatePurchase(
     await addDoc(collection(db, "activityLogs"), {
       userId,
       action: "Purchase Updated",
-      description: `Updated purchase from ${purchaseData.supplierName}`,
+      description: `Updated purchase with ${purchaseData.items.length} items`,
       timestamp: serverTimestamp(),
     })
   } catch (error) {
@@ -298,7 +342,7 @@ export async function deletePurchase(purchaseId: string, userId: string): Promis
     await addDoc(collection(db, "activityLogs"), {
       userId,
       action: "Purchase Deleted",
-      description: `Deleted purchase from ${purchase.supplierName}`,
+      description: `Deleted purchase with ${purchase.items.length} items`,
       timestamp: serverTimestamp(),
     })
   } catch (error) {

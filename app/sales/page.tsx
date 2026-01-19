@@ -532,7 +532,7 @@ function SalesContent() {
           <h2 className="text-lg font-semibold mb-4">Purchaser Information (Optional)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Purchaser Name (Max 30 characters)</label>
+              <label className="block text-sm font-medium mb-2">Purchaser Name </label>
               <Input
                 value={purchaserName}
                 onChange={(e) => {
@@ -542,14 +542,14 @@ function SalesContent() {
                     setPurchaserName(value)
                   }
                 }}
-                placeholder={purchaserName ? "" : "Enter purchaser name (letters and spaces only)"}
+                placeholder={purchaserName ? "" : "Enter purchaser name"}
               />
-              <p className="text-xs text-muted-foreground mt-1">
+              {/* <p className="text-xs text-muted-foreground mt-1">
                 {purchaserName.length}/30 characters (letters and spaces only)
-              </p>
+              </p> */}
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Description (Max 100 characters)</label>
+              <label className="block text-sm font-medium mb-2">Description </label>
               <Input
                 value={description}
                 onChange={(e) => {
@@ -561,9 +561,9 @@ function SalesContent() {
                 }}
                 placeholder={description ? "" : "Enter sale description"}
               />
-              <p className="text-xs text-muted-foreground mt-1">
+              {/* <p className="text-xs text-muted-foreground mt-1">
                 {description.length}/100 characters
-              </p>
+              </p> */}
             </div>
           </div>
         </Card>
@@ -590,7 +590,7 @@ function SalesContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Quantity *</label>
+                  <label className="block text-sm font-medium mb-1">Quantity <span className="text-red-500">*</span></label>
                   <Input
                     type="text"
                     value={quantity}
@@ -607,7 +607,7 @@ function SalesContent() {
                 </div>
                   
                   <div>
-                  <label className="block text-sm font-medium mb-1">Price Per Item (RS) *</label>
+                  <label className="block text-sm font-medium mb-1">Price Per Item (RS) <span className="text-red-500">*</span></label>
                     <Input
                       type="number"
                       min="0"

@@ -261,10 +261,10 @@ function ItemsContent() {
             <h2 className="text-xl font-semibold mb-4">{editingId ? "Edit Item" : "Add New Item"}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Item Name * (Max 30 characters)</label>
+                <label className="block text-sm font-medium mb-1">Item Name <span className="text-red-500">*</span></label>
                 <Input
                   type="text"
-                  placeholder={formData.name ? "" : "Product name (letters and spaces only)"}
+                  placeholder={formData.name ? "" : "Product name "}
                   value={formData.name}
                   onChange={(e) => {
                     const value = e.target.value
@@ -275,9 +275,9 @@ function ItemsContent() {
                   }}
                   required
                 />
-                <p className="text-xs text-muted-foreground mt-1">
+                {/* <p className="text-xs text-muted-foreground mt-1">
                   {formData.name.length}/30 characters (letters and spaces only)
-                </p>
+                </p> */}
               </div>
               {editingId && (
               <div>
@@ -312,10 +312,10 @@ function ItemsContent() {
                 />
               </div>
               <div >
-                <label className="block text-sm font-medium mb-1">Vendor Name (Max 30 characters)</label>
+                <label className="block text-sm font-medium mb-1">Vendor Name <span className="text-red-500">*</span></label>
                 <Input
                   type="text"
-                  placeholder={formData.vendor ? "" : "Vendor name (letters and spaces only)"}
+                  placeholder={formData.vendor ? "" : "Vendor name "}
                   value={formData.vendor}
                   onChange={(e) => {
                     const value = e.target.value
@@ -325,12 +325,12 @@ function ItemsContent() {
                     }
                   }}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
+                {/* <p className="text-xs text-muted-foreground mt-1">
                   {formData.vendor.length}/30 characters (letters and spaces only)
-                </p>
+                </p> */}
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Description (Max 100 characters)</label>
+                <label className="block text-sm font-medium mb-1">Description </label>
                 <textarea
                   placeholder={formData.description ? "" : "Item description"}
                   value={formData.description}
@@ -344,9 +344,9 @@ function ItemsContent() {
                   className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
                   rows={3}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
+                {/* <p className="text-xs text-muted-foreground mt-1">
                   {formData.description.length}/100 characters
-                </p>
+                </p> */}
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
              
