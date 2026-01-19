@@ -21,6 +21,12 @@ type PricingType = "unit" | "bulk"
 interface CartItem extends PurchaseItem {
   pricingType?: PricingType
   bulkPrice?: number
+  isNewItem?: boolean // Flag to indicate if this is a new item not yet in inventory
+  newItemData?: {
+    price: number
+    description: string
+    vendor: string
+  }
 }
 
 interface NewItemForm {
@@ -239,8 +245,8 @@ function PurchaseContent() {
     const unitCostValue = parseFloat(newItem.unitCost)
     const bulkPriceValue = parseFloat(newItem.bulkPrice)
 
-    if (!newItem.itemName || !newItem.quantity || qty <= 0) {
-      setError("Please fill all required fields")
+    if (!newItem.itemName || !newItem.quantity || qty <= 0 || !newItem.vendor.trim()) {
+      setError("Please fill all required fields (item name, quantity, and vendor)")
       return
     }
 
@@ -265,24 +271,6 @@ function PurchaseContent() {
         sellingPrice = (bulkPriceValue / 12) * 1.2 // 20% markup on per-unit cost
       }
 
-      // Create the new item in inventory
-      const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
-      const itemId = await addItem(
-        {
-          name: newItem.itemName,
-          price: sellingPrice,
-          quantity: 0, // Initial quantity is 0, will be updated after purchase
-          description: newItem.description,
-          vendor: newItem.vendor,
-        },
-        userId,
-        userName
-      )
-
-      if (!itemId) {
-        throw new Error("Failed to create item")
-      }
-
       // Calculate cost based on pricing type
       let cost: number
       let totalCost: number
@@ -300,15 +288,22 @@ function PurchaseContent() {
         finalQuantity = actualQuantity
       }
 
-      // Add to cart with auto-generated SKU
+      // Add to cart WITHOUT creating in inventory yet
+      // Item will be created when "Complete Purchase" is clicked
       const cartItem: CartItem = {
-        itemId: itemId,
+        itemId: `temp-${Date.now()}`, // Temporary ID
         itemName: newItem.itemName,
-        sku: "Auto-generated", // Will be replaced with actual SKU
+        sku: "Will be auto-generated", // Will be replaced with actual SKU
         quantity: finalQuantity,
         unitCost: cost,
         totalCost: totalCost,
         pricingType: newItem.pricingType,
+        isNewItem: true, // Flag to indicate this is a new item
+        newItemData: {
+          price: sellingPrice,
+          description: newItem.description,
+          vendor: newItem.vendor,
+        }
       }
       
       // Only add bulkPrice if it's defined
@@ -329,11 +324,8 @@ function PurchaseContent() {
         pricingType: "unit",
       })
 
-      setSuccess("New item added to cart and inventory!")
+      setSuccess("New item added to cart! It will be created in inventory when you complete the purchase.")
       setError("")
-
-      // Refresh items list
-      await fetchItems()
 
       setTimeout(() => {
         setSuccess("")
@@ -369,10 +361,44 @@ function PurchaseContent() {
       setIsSubmitting(true)
       setError("")
       
+      // First, create any new items in inventory
+      const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
+      const updatedCart = await Promise.all(
+        cart.map(async (item) => {
+          if (item.isNewItem && item.newItemData) {
+            // Create the item in inventory first
+            const itemId = await addItem(
+              {
+                name: item.itemName,
+                price: item.newItemData.price,
+                quantity: 0, // Initial quantity is 0, will be updated after purchase
+                description: item.newItemData.description,
+                vendor: item.newItemData.vendor,
+              },
+              userId,
+              userName
+            )
+
+            if (!itemId) {
+              throw new Error(`Failed to create item: ${item.itemName}`)
+            }
+
+            // Return updated item with real itemId and remove temporary fields
+            const { isNewItem, newItemData, ...itemWithoutNewFlags } = item
+            return {
+              ...itemWithoutNewFlags,
+              itemId: itemId,
+            }
+          }
+          // Return existing item as-is
+          return item
+        })
+      )
+      
       await createPurchase(userId, {
         supplierName: "",
         supplierContact: "",
-        items: cart,
+        items: updatedCart,
         totalAmount: calculateTotal(),
         notes,
       })
@@ -423,10 +449,44 @@ function PurchaseContent() {
       setIsSubmitting(true)
       setError("")
       
+      // First, create any new items in inventory
+      const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
+      const updatedCart = await Promise.all(
+        cart.map(async (item) => {
+          if (item.isNewItem && item.newItemData) {
+            // Create the item in inventory first
+            const itemId = await addItem(
+              {
+                name: item.itemName,
+                price: item.newItemData.price,
+                quantity: 0, // Initial quantity is 0, will be updated after purchase
+                description: item.newItemData.description,
+                vendor: item.newItemData.vendor,
+              },
+              userId,
+              userName
+            )
+
+            if (!itemId) {
+              throw new Error(`Failed to create item: ${item.itemName}`)
+            }
+
+            // Return updated item with real itemId and remove temporary fields
+            const { isNewItem, newItemData, ...itemWithoutNewFlags } = item
+            return {
+              ...itemWithoutNewFlags,
+              itemId: itemId,
+            }
+          }
+          // Return existing item as-is
+          return item
+        })
+      )
+      
       await updatePurchase(editingPurchaseId, {
         supplierName: "",
         supplierContact: "",
-        items: cart,
+        items: updatedCart,
         totalAmount: calculateTotal(),
         notes,
       }, userId)
@@ -904,7 +964,9 @@ function PurchaseContent() {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Vendor Name</label>
+                    <label className="block text-sm font-medium mb-2">
+                      Vendor Name <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       value={newItem.vendor}
                       onChange={(e) => {
@@ -916,6 +978,7 @@ function PurchaseContent() {
                       }}
                       placeholder={newItem.vendor ? "" : "Enter vendor name"}
                       disabled={isSubmitting}
+                      required
                     />
                     {/* <p className="text-xs text-muted-foreground mt-1">
                       {newItem.vendor.length}/30 characters (letters, numbers, and spaces only)
@@ -984,7 +1047,14 @@ function PurchaseContent() {
                     <tbody>
                       {cart.map((item, index) => (
                         <tr key={index} className="border-b border-border">
-                          <td className="py-2 px-2">{item.itemName}</td>
+                          <td className="py-2 px-2">
+                            {item.itemName}
+                            {item.isNewItem && (
+                              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs rounded font-medium">
+                                NEW
+                              </span>
+                            )}
+                          </td>
                           <td className="py-2 px-2 text-xs font-mono">{item.sku}</td>
                           <td className="py-2 px-2 text-center">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${
