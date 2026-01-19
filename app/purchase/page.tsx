@@ -627,24 +627,26 @@ function PurchaseContent() {
   return (
     <>
       <Navbar />
-      <main className="container mx-auto p-6 max-w-7xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Purchase Management</h1>
-          <p className="text-muted-foreground mt-2">Record purchases and add new inventory items</p>
+      <main className="container mx-auto p-3 sm:p-6 max-w-7xl">
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Purchase Management</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mt-2">Record purchases and add new inventory items</p>
         </div>
 
         {/* View Toggle */}
-        <Card className="p-4 mb-6">
-          <div className="flex gap-4">
+        <Card className="p-3 sm:p-4 mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
             <Button
               variant={activeView === "record" ? "default" : "outline"}
               onClick={() => setActiveView("record")}
+              className="w-full sm:w-auto"
             >
               Record Purchase
             </Button>
             <Button
               variant={activeView === "view" ? "default" : "outline"}
               onClick={() => setActiveView("view")}
+              className="w-full sm:w-auto"
             >
               View All Purchases
             </Button>
@@ -655,11 +657,11 @@ function PurchaseContent() {
           <>
             {/* Edit Mode Indicator */}
             {editingPurchaseId && (
-              <Card className="p-4 mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-                <div className="flex items-center justify-between">
+              <Card className="p-3 sm:p-4 mb-4 sm:mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="font-semibold text-blue-800 dark:text-blue-300">Editing Purchase</h3>
-                    <p className="text-sm text-blue-600 dark:text-blue-400">
+                    <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400">
                       You are currently editing an existing purchase. Click "Update Purchase" to save changes or "Cancel Edit" to discard.
                     </p>
                   </div>
@@ -667,6 +669,7 @@ function PurchaseContent() {
                     variant="outline" 
                     size="sm"
                     onClick={handleCancelEdit}
+                    className="w-full sm:w-auto"
                   >
                     Cancel
                   </Button>
@@ -675,13 +678,14 @@ function PurchaseContent() {
             )}
             
             {/* Purchase Mode Selector */}
-            <Card className="p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4">Purchase Type</h2>
-              <div className="flex gap-4">
+            <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
+              <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Purchase Type</h2>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                 <Button
                   variant={mode === "existing" ? "default" : "outline"}
                   onClick={() => setMode("existing")}
                   disabled={isSubmitting}
+                  className="w-full sm:w-auto"
                 >
                   Purchase Existing Items
                 </Button>
@@ -689,6 +693,7 @@ function PurchaseContent() {
                   variant={mode === "new" ? "default" : "outline"}
                   onClick={() => setMode("new")}
                   disabled={isSubmitting}
+                  className="w-full sm:w-auto"
                 >
                   Add New Items
                 </Button>
@@ -697,18 +702,19 @@ function PurchaseContent() {
 
             {/* Add Items Section */}
             {mode === "existing" ? (
-              <Card className="p-6 mb-6">
-                <h2 className="text-lg font-semibold mb-4">Add Existing Items to Purchase</h2>
+              <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Add Existing Items to Purchase</h2>
                 
                 {/* Pricing Type Selector */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-2">Pricing Type</label>
-                  <div className="flex gap-4">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                     <Button
                       type="button"
                       variant={existingItemPricingType === "unit" ? "default" : "outline"}
                       onClick={() => setExistingItemPricingType("unit")}
                       disabled={isSubmitting}
+                      className="w-full sm:w-auto text-xs sm:text-sm"
                     >
                       Unit Price (1 item)
                     </Button>
@@ -717,19 +723,20 @@ function PurchaseContent() {
                       variant={existingItemPricingType === "bulk" ? "default" : "outline"}
                       onClick={() => setExistingItemPricingType("bulk")}
                       disabled={isSubmitting}
+                      className="w-full sm:w-auto text-xs sm:text-sm"
                     >
                       Bulk Price (12 items)
                     </Button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="md:col-span-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="sm:col-span-2 lg:col-span-2">
                     <label className="block text-sm font-medium mb-2">Select Item</label>
                     <select
                       value={selectedItem}
                       onChange={(e) => setSelectedItem(e.target.value)}
-                      className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                      className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none text-sm"
                       disabled={isSubmitting}
                     >
                       <option value="">-- Select an item --</option>
@@ -815,13 +822,13 @@ function PurchaseContent() {
                 
                 {existingItemPricingType === "bulk" && (
                   <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <p className="text-sm text-blue-800 dark:text-blue-300">
+                    <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
                       ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
                     </p>
                   </div>
                 )}
 
-                <Button onClick={handleAddExistingItem} className="mt-4" disabled={isSubmitting || isAddingToCart}>
+                <Button onClick={handleAddExistingItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
                     <>
                       <svg className="animate-spin -ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -836,18 +843,19 @@ function PurchaseContent() {
                 </Button>
               </Card>
             ) : (
-              <Card className="p-6 mb-6">
-                <h2 className="text-lg font-semibold mb-4">Add New Item to Inventory</h2>
+              <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Add New Item to Inventory</h2>
                 <div className="space-y-4">
                   {/* Pricing Type Selector */}
                   <div>
                     <label className="block text-sm font-medium mb-2">Pricing Type</label>
-                    <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                       <Button
                         type="button"
                         variant={newItem.pricingType === "unit" ? "default" : "outline"}
                         onClick={() => setNewItem({ ...newItem, pricingType: "unit" })}
                         disabled={isSubmitting}
+                        className="w-full sm:w-auto text-xs sm:text-sm"
                       >
                         Unit Price (1 item)
                       </Button>
@@ -856,6 +864,7 @@ function PurchaseContent() {
                         variant={newItem.pricingType === "bulk" ? "default" : "outline"}
                         onClick={() => setNewItem({ ...newItem, pricingType: "bulk" })}
                         disabled={isSubmitting}
+                        className="w-full sm:w-auto text-xs sm:text-sm"
                       >
                         Bulk Price (12 items)
                       </Button>
@@ -1011,7 +1020,7 @@ function PurchaseContent() {
                     </p>
                   </div> */}
                 </div>
-                <Button onClick={handleAddNewItem} className="mt-4" disabled={isSubmitting || isAddingToCart}>
+                <Button onClick={handleAddNewItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
                     <>
                       <svg className="animate-spin -ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1029,62 +1038,66 @@ function PurchaseContent() {
 
             {/* Cart */}
             {cart.length > 0 && (
-              <Card className="p-6 mb-6">
-                <h2 className="text-lg font-semibold mb-4">Purchase Cart</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+              <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Purchase Cart</h2>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-xs sm:text-sm min-w-[600px]">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left py-2 px-2">Item</th>
-                        <th className="text-left py-2 px-2">SKU</th>
-                        <th className="text-center py-2 px-2">Pricing</th>
-                        <th className="text-right py-2 px-2">Qty</th>
-                        <th className="text-right py-2 px-2">Unit Cost</th>
-                        <th className="text-right py-2 px-2">Total</th>
-                        <th className="text-right py-2 px-2">Action</th>
+                        <th className="text-left py-2 px-1 sm:px-2">Item</th>
+                        <th className="text-left py-2 px-1 sm:px-2 hidden sm:table-cell">SKU</th>
+                        <th className="text-center py-2 px-1 sm:px-2">Type</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Qty</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Cost</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Total</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {cart.map((item, index) => (
                         <tr key={index} className="border-b border-border">
-                          <td className="py-2 px-2">
-                            {item.itemName}
-                            {item.isNewItem && (
-                              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs rounded font-medium">
-                                NEW
-                              </span>
-                            )}
+                          <td className="py-2 px-1 sm:px-2">
+                            <div className="min-w-[100px]">
+                              {item.itemName}
+                              {item.isNewItem && (
+                                <span className="ml-1 px-1 sm:px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs rounded font-medium">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="py-2 px-2 text-xs font-mono">{item.sku}</td>
-                          <td className="py-2 px-2 text-center">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          <td className="py-2 px-1 sm:px-2 text-xs font-mono hidden sm:table-cell">{item.sku}</td>
+                          <td className="py-2 px-1 sm:px-2 text-center">
+                            <span className={`px-1 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-medium ${
                               item.pricingType === "bulk"
                                 ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                                 : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                             }`}>
-                              {item.pricingType === "bulk" ? "Bulk (12)" : "Unit"}
+                              {item.pricingType === "bulk" ? "Bulk" : "Unit"}
                             </span>
                             {item.pricingType === "bulk" && item.bulkPrice && (
-                              <div className="text-xs text-muted-foreground mt-1">
+                              <div className="text-xs text-muted-foreground mt-1 hidden sm:block">
                                 RS {item.bulkPrice.toFixed(2)}/12
                               </div>
                             )}
                           </td>
-                          <td className="py-2 px-2 text-right">{item.quantity}</td>
-                          <td className="py-2 px-2 text-right">RS {item.unitCost.toFixed(2)}</td>
-                          <td className="py-2 px-2 text-right font-semibold">RS {item.totalCost.toFixed(2)}</td>
-                          <td className="py-2 px-2 text-right">
-                            <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(index)} disabled={isSubmitting}>
-                              Remove
+                          <td className="py-2 px-1 sm:px-2 text-right">{item.quantity}</td>
+                          <td className="py-2 px-1 sm:px-2 text-right">RS {item.unitCost.toFixed(2)}</td>
+                          <td className="py-2 px-1 sm:px-2 text-right font-semibold">RS {item.totalCost.toFixed(2)}</td>
+                          <td className="py-2 px-1 sm:px-2 text-right">
+                            <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(index)} disabled={isSubmitting} className="text-xs px-2">
+                              <span className="hidden sm:inline">Remove</span>
+                              <span className="sm:hidden">×</span>
                             </Button>
                           </td>
                         </tr>
                       ))}
                       <tr className="font-bold">
-                        <td colSpan={5} className="py-3 px-2 text-right">
+                        <td colSpan={4} className="py-3 px-1 sm:px-2 text-right hidden sm:table-cell">
                           Total Amount:
                         </td>
-                        <td className="py-3 px-2 text-right text-lg">RS {calculateTotal().toFixed(2)}</td>
+                        <td className="py-3 px-1 sm:px-2 text-right sm:hidden">Total:</td>
+                        <td colSpan={2} className="py-3 px-1 sm:px-2 text-right text-base sm:text-lg">RS {calculateTotal().toFixed(2)}</td>
                         <td></td>
                       </tr>
                     </tbody>
@@ -1094,31 +1107,32 @@ function PurchaseContent() {
             )}
 
             {/* Notes */}
-            <Card className="p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4">Additional Notes (Optional)</h2>
+            <Card className="p-4 sm:p-6 mb-4 sm:mb-6">
+              <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Additional Notes (Optional)</h2>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder={notes ? "" : "Add any notes about this purchase..."}
                 rows={3}
                 disabled={isSubmitting}
+                className="text-sm"
               />
             </Card>
 
             {/* Messages */}
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 p-4 rounded-lg mb-4">
+              <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 p-3 sm:p-4 rounded-lg mb-4 text-sm">
                 {error}
               </div>
             )}
             {success && (
-              <div className="bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 p-4 rounded-lg mb-4">
+              <div className="bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 p-3 sm:p-4 rounded-lg mb-4 text-sm">
                 {success}
               </div>
             )}
 
             {/* Submit Button */}
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Button 
                 onClick={editingPurchaseId ? handleUpdatePurchase : handleSubmitPurchase} 
                 className="flex-1" 
@@ -1126,7 +1140,7 @@ function PurchaseContent() {
               disabled={cart.length === 0 || isSubmitting}
             >
                 {isSubmitting 
-                  ? (editingPurchaseId ? "Updating Purchase..." : "Processing Purchase...") 
+                  ? (editingPurchaseId ? "Updating..." : "Processing...") 
                   : (editingPurchaseId ? "Update Purchase" : "Complete Purchase")
                 }
             </Button>
@@ -1136,6 +1150,7 @@ function PurchaseContent() {
                   variant="outline"
                   size="lg" 
                   disabled={isSubmitting}
+                  className="w-full sm:w-auto"
                 >
                   Cancel Edit
                 </Button>
@@ -1144,21 +1159,22 @@ function PurchaseContent() {
           </>
         ) : (
           /* Purchase History */
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Date Filter */}
             <DateFilter onFilter={handleDateFilter} />
 
             {/* Filters */}
-            <Card className="p-6">
+            <Card className="p-4 sm:p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Search */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by supplier, item, or notes..."
+                    placeholder="Search by item or notes..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    className="text-sm"
                   />
                 </div>
 
@@ -1168,25 +1184,25 @@ function PurchaseContent() {
                   <select
                     value={pricingTypeFilter}
                     onChange={(e) => setPricingTypeFilter(e.target.value as any)}
-                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none text-sm"
                   >
-                    <option value="all">All Pricing Types</option>
-                    <option value="unit">Unit Price</option>
-                    <option value="bulk">Bulk Price (12 items)</option>
+                    <option value="all">All Types</option>
+                    <option value="unit">Unit</option>
+                    <option value="bulk">Bulk</option>
                   </select>
                 </div>
               </div>
             </Card>
 
-            <Card className="p-6">
-              <div className="flex justify-between items-center mb-4">
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold">Purchase History</h2>
-                  <div className="text-sm text-muted-foreground mt-1">
+                  <h2 className="text-base sm:text-lg font-semibold">Purchase History</h2>
+                  <div className="text-xs sm:text-sm text-muted-foreground mt-1">
                     Showing {filteredPurchases.length} of {purchases.length} purchases
                   </div>
                 </div>
-                <Button onClick={exportPurchasesToPDF} disabled={filteredPurchases.length === 0}>
+                <Button onClick={exportPurchasesToPDF} disabled={filteredPurchases.length === 0} className="w-full sm:w-auto text-sm" size="sm">
                   Export PDF
                 </Button>
               </div>
@@ -1200,11 +1216,11 @@ function PurchaseContent() {
                     : new Date()
 
                   return (
-                    <Card key={purchase.id} className="p-4 border-2">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-semibold text-lg">Purchase #{purchase.id.slice(0, 8)}</h3>
-                          <p className="text-sm text-muted-foreground">
+                    <Card key={purchase.id} className="p-3 sm:p-4 border-2">
+                      <div className="flex flex-col sm:flex-row justify-between items-start mb-3 gap-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-base sm:text-lg">Purchase #{purchase.id.slice(0, 8)}</h3>
+                          <p className="text-xs sm:text-sm text-muted-foreground">
                             {purchaseDate.toLocaleDateString("en-GB", {
                               day: "2-digit",
                               month: "short",
@@ -1212,16 +1228,17 @@ function PurchaseContent() {
                             })}
                           </p>
                         </div>
-                        <div className="text-right flex flex-col items-end gap-2">
-                          <div>
-                          <div className="text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
-                          <div className="text-sm text-muted-foreground">{purchase.items.length} items</div>
+                        <div className="w-full sm:w-auto text-left sm:text-right flex flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-2">
+                          <div className="flex-1 sm:flex-none">
+                          <div className="text-xl sm:text-2xl font-bold text-primary">RS {purchase.totalAmount.toFixed(2)}</div>
+                          <div className="text-xs sm:text-sm text-muted-foreground">{purchase.items.length} items</div>
                           </div>
                           <div className="flex gap-2">
                             <Button 
                               size="sm" 
                               variant="outline"
                               onClick={() => handleEditPurchase(purchase)}
+                              className="text-xs px-2 sm:px-3"
                             >
                               Edit
                             </Button>
@@ -1229,6 +1246,7 @@ function PurchaseContent() {
                               size="sm" 
                               variant="destructive"
                               onClick={() => setDeleteConfirmId(purchase.id)}
+                              className="text-xs px-2 sm:px-3"
                             >
                               Delete
                             </Button>
@@ -1237,25 +1255,25 @@ function PurchaseContent() {
                       </div>
 
                       <div className="border-t pt-3">
-                        <h4 className="font-medium text-sm mb-2">Items:</h4>
+                        <h4 className="font-medium text-xs sm:text-sm mb-2">Items:</h4>
                         <div className="space-y-2">
                           {purchase.items.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center text-sm">
-                              <div className="flex items-center gap-2">
+                            <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs sm:text-sm gap-1 sm:gap-2">
+                              <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
                                 <span>
-                                  {item.itemName} ({item.sku}) x {item.quantity}
+                                  {item.itemName} <span className="text-muted-foreground text-xs">({item.sku})</span> x {item.quantity}
                                 </span>
                                 {item.pricingType && (
-                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  <span className={`px-1.5 sm:px-2 py-0.5 rounded text-xs font-medium ${
                                     item.pricingType === "bulk"
                                       ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                                       : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                                   }`}>
-                                    {item.pricingType === "bulk" ? "Bulk (12)" : "Unit"}
+                                    {item.pricingType === "bulk" ? "Bulk" : "Unit"}
                                   </span>
                                 )}
                               </div>
-                              <span className="font-medium">RS {item.totalCost.toFixed(2)}</span>
+                              <span className="font-medium whitespace-nowrap">RS {item.totalCost.toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -1263,7 +1281,7 @@ function PurchaseContent() {
 
                       {purchase.notes && (
                         <div className="border-t pt-3 mt-3">
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-xs sm:text-sm text-muted-foreground">
                             <strong>Notes:</strong> {purchase.notes}
                           </p>
                         </div>
@@ -1271,14 +1289,14 @@ function PurchaseContent() {
 
                       {/* Delete Confirmation Dialog */}
                       {deleteConfirmId === purchase.id && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                          <Card className="p-6 max-w-md mx-4">
-                            <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
-                            <p className="text-muted-foreground mb-6">
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                          <Card className="p-4 sm:p-6 max-w-md w-full">
+                            <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Confirm Delete</h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6">
                               Are you sure you want to delete this purchase? 
                               This will also adjust the inventory quantities. This action cannot be undone.
                             </p>
-                            <div className="flex gap-4">
+                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                               <Button 
                                 variant="destructive" 
                                 onClick={() => handleDeletePurchase(purchase.id)}

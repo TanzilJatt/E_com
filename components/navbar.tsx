@@ -44,6 +44,23 @@ export function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setIsOpen(false)
+  }, [pathname])
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+    return () => {
+      document.body.style.overflow = 'unset'
+    }
+  }, [isOpen])
+
   const isActive = (path: string) => {
     if (path === "/") {
       return pathname === "/"
@@ -67,9 +84,19 @@ export function Navbar() {
   }
 
   return (
-    <nav className="bg-card border-b border-border sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+    <>
+      {/* Backdrop overlay when mobile menu is open */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-300 ease-in-out"
+          onClick={() => setIsOpen(false)}
+          style={{ opacity: isOpen ? 1 : 0 }}
+        />
+      )}
+      
+      <nav className="bg-card border-b border-border sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -204,18 +231,44 @@ export function Navbar() {
 
           {/* Mobile menu button */}
           <div className="flex items-center gap-2 md:hidden">
-            <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-foreground hover:bg-muted rounded-lg">
-              <span className="sr-only">Menu</span>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+            <button 
+              onClick={() => setIsOpen(!isOpen)} 
+              className="p-2 text-foreground hover:bg-muted rounded-lg transition-colors relative z-50"
+              aria-label="Toggle menu"
+            >
+              <span className="sr-only">{isOpen ? "Close menu" : "Open menu"}</span>
+              <div className="w-6 h-6 flex flex-col justify-center items-center">
+                {/* Animated hamburger icon */}
+                <span 
+                  className={`block w-6 h-0.5 bg-current transition-all duration-300 ease-in-out ${
+                    isOpen ? "rotate-45 translate-y-0.5" : "-translate-y-1.5"
+                  }`}
+                />
+                <span 
+                  className={`block w-6 h-0.5 bg-current transition-all duration-300 ease-in-out my-1 ${
+                    isOpen ? "opacity-0" : "opacity-100"
+                  }`}
+                />
+                <span 
+                  className={`block w-6 h-0.5 bg-current transition-all duration-300 ease-in-out ${
+                    isOpen ? "-rotate-45 -translate-y-0.5" : "translate-y-1.5"
+                  }`}
+                />
+              </div>
             </button>
           </div>
         </div>
 
         {/* Mobile Navigation */}
-        {isOpen && (
-          <div className="md:hidden pb-4 space-y-2">
+        <div 
+          className={`
+            fixed top-16 right-0 w-72 h-[calc(100vh-4rem)] bg-card border-l border-border
+            md:hidden overflow-y-auto shadow-2xl z-50
+            transform transition-transform duration-300 ease-in-out
+            ${isOpen ? "translate-x-0" : "translate-x-full"}
+          `}
+        >
+          <div className="p-4 space-y-2">
             {/* Mobile Profile Section */}
             <div className="flex items-center gap-3 px-3 py-3 bg-muted/50 rounded-lg mb-2">
               <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
@@ -223,11 +276,11 @@ export function Navbar() {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold text-foreground">{userName}</p>
-                <p className="text-xs text-muted-foreground">{auth.currentUser?.email}</p>
+                <p className="text-xs text-muted-foreground truncate">{auth.currentUser?.email}</p>
               </div>
             </div>
             
-            <Link href="/">
+            <Link href="/" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -236,7 +289,7 @@ export function Navbar() {
                 Dashboard
               </Button>
             </Link>
-            <Link href="/items">
+            <Link href="/items" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/items") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -245,7 +298,7 @@ export function Navbar() {
                 Items
               </Button>
             </Link>
-            <Link href="/sales">
+            <Link href="/sales" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/sales") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -254,7 +307,7 @@ export function Navbar() {
                 Sales
               </Button>
             </Link>
-            <Link href="/purchase">
+            <Link href="/purchase" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/purchase") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -263,7 +316,7 @@ export function Navbar() {
                 Purchase
               </Button>
             </Link>
-            <Link href="/expenses">
+            <Link href="/expenses" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/expenses") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -272,7 +325,7 @@ export function Navbar() {
                 Expenses
               </Button>
             </Link>
-            <Link href="/reports">
+            <Link href="/reports" onClick={() => setIsOpen(false)}>
               <Button 
                 variant={isActive("/reports") ? "secondary" : "ghost"} 
                 size="sm" 
@@ -293,7 +346,7 @@ export function Navbar() {
             
             {/* Profile Actions */}
             <div className="border-t border-border pt-2 mt-2 space-y-2">
-              <Link href="/profile">
+              <Link href="/profile" onClick={() => setIsOpen(false)}>
                 <Button variant="ghost" size="sm" className="w-full justify-start">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -309,8 +362,9 @@ export function Navbar() {
               </Button>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </nav>
+    </>
   )
 }
