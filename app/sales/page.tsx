@@ -16,7 +16,7 @@ import autoTable from "jspdf-autotable"
 
 function SalesContent() {
   // View state
-  const [activeView, setActiveView] = useState<"record" | "list">("record")
+  const [activeView, setActiveView] = useState<"record" | "list">("list")
   const [authReady, setAuthReady] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
@@ -292,6 +292,12 @@ function SalesContent() {
         setDescription("")
         fetchItems()
         fetchSales() // Refresh sales list
+        
+        // Redirect to list view after a short delay
+        setTimeout(() => {
+          setSuccess("")
+          setActiveView("list")
+        }, 2000)
       }
     } catch (err: any) {
       setError(err.message)
@@ -477,34 +483,46 @@ function SalesContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">Sales Management</h1>
-          <p className="text-muted-foreground mt-2">Record and view sales transactions</p>
-        </div>
-
-        {/* View Toggle */}
-        <div className="mb-6 flex gap-2">
-          <Button
-            onClick={() => setActiveView("record")}
-            variant={activeView === "record" ? "default" : "outline"}
-          >
-            Record Sale
-          </Button>
-          <Button
-            onClick={() => setActiveView("list")}
-            variant={activeView === "list" ? "default" : "outline"}
-          >
-            View All Sales
-          </Button>
+      <main className="container mx-auto p-3 sm:p-6 max-w-7xl">
+        {/* Header */}
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Sales Management</h1>
+            <p className="text-sm sm:text-base text-muted-foreground mt-2">Record and view sales transactions</p>
+          </div>
+          {activeView === "list" && (
+            <Button
+              onClick={() => setActiveView("record")}
+              size="lg"
+              className="w-full sm:w-auto"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Sale
+            </Button>
+          )}
         </div>
 
         {/* Record Sale View */}
         {activeView === "record" && (
           <div>
+            {/* Back Button */}
+            <div className="mb-6">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveView("list")}
+                className="gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back to Sales
+              </Button>
+            </div>
 
         {/* Sale Type Selector */}
-        <Card className="p-6 mb-8">
+        <Card className="p-4 sm:p-6 mb-4 sm:mb-8">
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -528,8 +546,8 @@ function SalesContent() {
         </Card> 
 
         {/* Purchaser Information */}
-        <Card className="p-6 mb-8">
-          <h2 className="text-lg font-semibold mb-4">Purchaser Information (Optional)</h2>
+        <Card className="p-4 sm:p-6 mb-4 sm:mb-8">
+          <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Purchaser Information (Optional)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">Purchaser Name </label>
@@ -571,8 +589,8 @@ function SalesContent() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Items Selection */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Add Items to Sale</h2>
+            <Card className="p-4 sm:p-6">
+              <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Add Items to Sale</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Select Item</label>
@@ -645,8 +663,8 @@ function SalesContent() {
             </Card>
 
             {/* Cart Items */}
-            <Card className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Cart Items</h2>
+            <Card className="p-4 sm:p-6">
+              <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Cart Items</h2>
               {cart.length === 0 ? (
                 <p className="text-muted-foreground">No items in cart</p>
               ) : (
@@ -686,8 +704,8 @@ function SalesContent() {
 
           {/* Order Summary */}
           <div>
-            <Card className="p-6 sticky top-20">
-              <h2 className="text-lg font-semibold mb-4">Order Summary</h2>
+            <Card className="p-4 sm:p-6 sticky top-20">
+              <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Order Summary</h2>
               <div className="space-y-3 mb-6">
                 <div className="flex justify-between text-sm p-2 bg-muted/50 rounded">
                   <span className="text-muted-foreground">Items:</span>
@@ -844,7 +862,7 @@ function SalesContent() {
             <DateFilter onFilter={handleDateFilter} />
 
             {/* Filters */}
-            <Card className="p-6">
+            <Card className="p-4 sm:p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Search */}
                 <div>
@@ -889,8 +907,8 @@ function SalesContent() {
             </Card>
 
             {/* Sales List */}
-            <Card className="p-6">
-              <div className="flex justify-between items-center mb-4">
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                 <h2 className="text-xl font-semibold">Sales List</h2>
                 <div className="flex items-center gap-4">
                   <div className="text-sm text-muted-foreground">

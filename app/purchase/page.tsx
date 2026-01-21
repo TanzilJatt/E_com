@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Navbar } from "@/components/navbar"
 import { createPurchase, getPurchases, updatePurchase, deletePurchase, type Purchase, type PurchaseItem } from "@/lib/purchases"
-import { getItems, addItem, type Item } from "@/lib/items"
+import { getItems, addItem, updateItem, type Item } from "@/lib/items"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { useRouter } from "next/navigation"
@@ -50,7 +50,7 @@ function PurchaseContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [activeView, setActiveView] = useState<"record" | "view">("record")
+  const [activeView, setActiveView] = useState<"record" | "view">("view")
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState("")
@@ -178,7 +178,7 @@ function PurchaseContent() {
     }
 
     if (existingItemPricingType === "bulk" && !bulkPrice) {
-      setError("Please enter bulk price (12 items)")
+      setError("Please enter box price (12 items)")
       return
     }
 
@@ -256,7 +256,7 @@ function PurchaseContent() {
     }
 
     if (newItem.pricingType === "bulk" && (!newItem.bulkPrice || bulkPriceValue <= 0)) {
-      setError("Please enter bulk price (12 items)")
+      setError("Please enter box price (12 items)")
       return
     }
 
@@ -266,9 +266,9 @@ function PurchaseContent() {
       // Calculate cost based on pricing type for the selling price
       let sellingPrice: number
       if (newItem.pricingType === "unit") {
-        sellingPrice = unitCostValue * 1.2 // 20% markup as default
+        sellingPrice = unitCostValue // 20% markup as default
       } else {
-        sellingPrice = (bulkPriceValue / 12) * 1.2 // 20% markup on per-unit cost
+        sellingPrice = (bulkPriceValue / 12) // 20% markup on per-unit cost
       }
 
       // Calculate cost based on pricing type
@@ -361,7 +361,7 @@ function PurchaseContent() {
       setIsSubmitting(true)
       setError("")
       
-      // First, create any new items in inventory
+      // First, create any new items in inventory and update existing items
       const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
       const updatedCart = await Promise.all(
         cart.map(async (item) => {
@@ -389,6 +389,16 @@ function PurchaseContent() {
               ...itemWithoutNewFlags,
               itemId: itemId,
             }
+          } else {
+            // Update existing item with new purchase price
+            const newSellingPrice = item.unitCost  // 20% markup
+            await updateItem(
+              item.itemId,
+              {
+                price: newSellingPrice,
+              },
+              userId
+            )
           }
           // Return existing item as-is
           return item
@@ -449,7 +459,7 @@ function PurchaseContent() {
       setIsSubmitting(true)
       setError("")
       
-      // First, create any new items in inventory
+      // First, create any new items in inventory and update existing items
       const userName = auth.currentUser?.displayName || auth.currentUser?.email || "User"
       const updatedCart = await Promise.all(
         cart.map(async (item) => {
@@ -477,6 +487,16 @@ function PurchaseContent() {
               ...itemWithoutNewFlags,
               itemId: itemId,
             }
+          } else {
+            // Update existing item with new purchase price
+            const newSellingPrice = item.unitCost  // 20% markup
+            await updateItem(
+              item.itemId,
+              {
+                price: newSellingPrice,
+              },
+              userId
+            )
           }
           // Return existing item as-is
           return item
@@ -628,33 +648,44 @@ function PurchaseContent() {
     <>
       <Navbar />
       <main className="container mx-auto p-3 sm:p-6 max-w-7xl">
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Purchase Management</h1>
-          <p className="text-sm sm:text-base text-muted-foreground mt-2">Record purchases and add new inventory items</p>
+        {/* Header */}
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Purchase Management</h1>
+            <p className="text-sm sm:text-base text-muted-foreground mt-2">Record purchases and add new inventory items</p>
+          </div>
+          {activeView === "view" && !editingPurchaseId && (
+            <Button
+              onClick={() => setActiveView("record")}
+              size="lg"
+              className="w-full sm:w-auto"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Purchase
+            </Button>
+          )}
         </div>
 
-        {/* View Toggle */}
-        <Card className="p-3 sm:p-4 mb-4 sm:mb-6">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-            <Button
-              variant={activeView === "record" ? "default" : "outline"}
-              onClick={() => setActiveView("record")}
-              className="w-full sm:w-auto"
-            >
-              Record Purchase
-            </Button>
-            <Button
-              variant={activeView === "view" ? "default" : "outline"}
-              onClick={() => setActiveView("view")}
-              className="w-full sm:w-auto"
-            >
-              View All Purchases
-            </Button>
-          </div>
-        </Card>
-
-        {activeView === "record" ? (
+        {activeView === "record" || editingPurchaseId ? (
           <>
+            {/* Back Button */}
+            {!editingPurchaseId && (
+              <div className="mb-4 sm:mb-6">
+                <Button
+                  variant="ghost"
+                  onClick={() => setActiveView("view")}
+                  className="gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  Back to Purchases
+                </Button>
+              </div>
+            )}
+
             {/* Edit Mode Indicator */}
             {editingPurchaseId && (
               <Card className="p-3 sm:p-4 mb-4 sm:mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
@@ -725,7 +756,7 @@ function PurchaseContent() {
                       disabled={isSubmitting}
                       className="w-full sm:w-auto text-xs sm:text-sm"
                     >
-                      Bulk Price (12 items)
+                      Box Price (12 items)
                     </Button>
                   </div>
                 </div>
@@ -796,7 +827,7 @@ function PurchaseContent() {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS)</label>
+                      <label className="block text-sm font-medium mb-2">Box Price (12 items) (RS)</label>
                       <Input
                         type="text"
                         value={bulkPrice}
@@ -820,13 +851,13 @@ function PurchaseContent() {
                   )}
                 </div>
                 
-                {existingItemPricingType === "bulk" && (
+                {/* {existingItemPricingType === "bulk" && (
                   <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
                       ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
                     </p>
                   </div>
-                )}
+                )} */}
 
                 <Button onClick={handleAddExistingItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
@@ -866,7 +897,7 @@ function PurchaseContent() {
                         disabled={isSubmitting}
                         className="w-full sm:w-auto text-xs sm:text-sm"
                       >
-                        Bulk Price (12 items)
+                        Box Price (12 items)
                       </Button>
                     </div>
                   </div>
@@ -940,7 +971,7 @@ function PurchaseContent() {
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Bulk Price (12 items) (RS) <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-medium mb-2">Box Price (12 items) (RS) <span className="text-red-500">*</span></label>
                         <Input
                           type="text"
                           value={newItem.bulkPrice}
@@ -964,13 +995,13 @@ function PurchaseContent() {
                     )}
                   </div>
 
-                  {newItem.pricingType === "bulk" && (
+                  {/* {newItem.pricingType === "bulk" && (
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                       <p className="text-sm text-blue-800 dark:text-blue-300">
                         ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
                       </p>
                     </div>
-                  )}
+                  )} */}
 
                   <div>
                     <label className="block text-sm font-medium mb-2">
