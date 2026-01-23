@@ -14,7 +14,7 @@ export interface SaleItem {
 
 export interface Sale {
   id: string
-  type: "wholesale" | "retail"
+  type: "box" | "retail"
   items: SaleItem[]
   totalAmount: number
   paymentMethod: {
@@ -40,7 +40,7 @@ export async function createSale(
     if (!db) {
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
-    // No quantity restrictions - users can select any number of items for retail or wholesale
+    // No quantity restrictions - users can select any number of items for retail or box purchase
     const totalQuantity = saleData.items.reduce((sum, item) => sum + item.quantity, 0)
 
     // Clean items data - remove undefined values

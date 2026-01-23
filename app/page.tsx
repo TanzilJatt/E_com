@@ -17,7 +17,7 @@ function DashboardContent() {
     totalSales: 0,
     totalRevenue: 0,
     retailSales: 0,
-    wholesaleSales: 0,
+    boxSales: 0,
   })
   const [allSales, setAllSales] = useState<any[]>([])
   const [recentSales, setRecentSales] = useState<any[]>([])
@@ -26,7 +26,7 @@ function DashboardContent() {
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState("")
-  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "wholesale">("all")
+  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "box">("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
@@ -55,14 +55,14 @@ function DashboardContent() {
         // Calculate stats
         const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
         const retailCount = sales.filter((s) => s.type === "retail").length
-        const wholesaleCount = sales.filter((s) => s.type === "wholesale").length
+        const boxCount = sales.filter((s) => s.type === "box").length
 
         setStats({
           totalItems: items.length,
           totalSales: sales.length,
           totalRevenue,
           retailSales: retailCount,
-          wholesaleSales: wholesaleCount,
+          boxSales: boxCount,
         })
 
         setAllSales(sales)
@@ -184,7 +184,7 @@ function DashboardContent() {
               >
                 <option value="all">All Types</option>
                 <option value="retail">Retail</option>
-                <option value="wholesale">Wholesale</option>
+                <option value="box">Box Purchase</option>
               </select>
             </div>
 
@@ -229,8 +229,8 @@ function DashboardContent() {
             <div className="text-3xl font-bold text-primary mt-2">{stats.retailSales}</div>
           </Card>
           <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Wholesale Sales</div>
-            <div className="text-3xl font-bold text-primary mt-2">{stats.wholesaleSales}</div>
+            <div className="text-sm font-medium text-muted-foreground">Box Sales</div>
+            <div className="text-3xl font-bold text-primary mt-2">{stats.boxSales}</div>
           </Card>
         </div>
 
@@ -255,7 +255,7 @@ function DashboardContent() {
               <BarChart
                 data={[
                   { name: "Retail", value: stats.retailSales },
-                  { name: "Wholesale", value: stats.wholesaleSales },
+                  { name: "Box Purchase", value: stats.boxSales },
                 ]}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               >
@@ -310,7 +310,7 @@ function DashboardContent() {
                             </td>
                             <td className="py-2 px-2">
                               <span
-                                className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "box"
                                   ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                                   : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
                                   }`}

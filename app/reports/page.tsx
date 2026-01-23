@@ -30,7 +30,7 @@ function ReportsContent() {
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   )
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
-  const [filterType, setFilterType] = useState<"all" | "wholesale" | "retail">("all")
+  const [filterType, setFilterType] = useState<"all" | "box" | "retail">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
 
   useEffect(() => {
@@ -89,7 +89,7 @@ function ReportsContent() {
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
   const totalTransactions = filteredSales.length
   const avgTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0
-  const wholesaleCount = filteredSales.filter((s) => s.type === "wholesale").length
+  const boxCount = filteredSales.filter((s) => s.type === "box").length
   const retailCount = filteredSales.filter((s) => s.type === "retail").length
 
   // Chart data - daily revenue
@@ -109,7 +109,7 @@ function ReportsContent() {
   // Sales by type
   const saleTypeData = [
     { name: "Retail", value: retailCount, fill: "#10b981" },
-    { name: "Wholesale", value: wholesaleCount, fill: "#3b82f6" },
+    { name: "Box Purchase", value: boxCount, fill: "#3b82f6" },
   ]
 
   const exportReportToPDF = () => {
@@ -151,7 +151,7 @@ function ReportsContent() {
     doc.text(`Total Transactions: ${totalTransactions}`, 14, statsY + 14)
     doc.text(`Average Transaction: RS ${avgTransaction.toFixed(2)}`, 14, statsY + 20)
     doc.text(`Retail Sales: ${retailCount} (${((retailCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 26)
-    doc.text(`Wholesale Sales: ${wholesaleCount} (${((wholesaleCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 32)
+    doc.text(`Box Sales: ${boxCount} (${((boxCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 32)
     
     // Add sales table
     doc.setFontSize(12)
@@ -241,12 +241,12 @@ function ReportsContent() {
               <label className="block text-sm font-medium mb-2">Sale Type</label>
               <select
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value as "all" | "wholesale" | "retail")}
+                onChange={(e) => setFilterType(e.target.value as "all" | "box" | "retail")}
                 className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
               >
                 <option value="all">All Sales</option>
                 <option value="retail">Retail Only</option>
-                <option value="wholesale">Wholesale Only</option>
+                <option value="box">Box Purchase Only</option>
               </select>
             </div>
             <div className="flex items-end">
@@ -272,9 +272,9 @@ function ReportsContent() {
             <div className="text-3xl font-bold text-primary mt-2">RS {avgTransaction.toFixed(2)}</div>
           </Card>
           <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Retail / Wholesale</div>
+            <div className="text-sm font-medium text-muted-foreground">Retail / Box Purchase</div>
             <div className="text-lg font-bold text-primary mt-2">
-              {retailCount} / {wholesaleCount}
+              {retailCount} / {boxCount}
             </div>
           </Card>
         </div>
@@ -345,7 +345,7 @@ function ReportsContent() {
                     <td className="py-3 px-2 text-xs">{sale.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</td>
                     <td className="py-3 px-2">
                       <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "wholesale"
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "box"
                             ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                             : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
                           }`}

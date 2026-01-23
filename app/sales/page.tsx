@@ -22,7 +22,7 @@ function SalesContent() {
   
   // Record Sale State
   const [items, setItems] = useState<Item[]>([])
-  const [saleType, setSaleType] = useState<"wholesale" | "retail">("retail")
+  const [saleType, setSaleType] = useState<"box" | "retail">("retail")
   const [cart, setCart] = useState<SaleItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState("")
   const [quantity, setQuantity] = useState<number | "">("")
@@ -43,7 +43,7 @@ function SalesContent() {
   const [sales, setSales] = useState<Sale[]>([])
   const [filteredSales, setFilteredSales] = useState<Sale[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "wholesale">("all")
+  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "box">("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [loading, setLoading] = useState(false)
@@ -159,12 +159,12 @@ function SalesContent() {
 
   const handleAddToCart = () => {
     setError("")
-    if (!selectedItemId || quantity <= 0) {
+    if (!selectedItemId || !quantity || quantity <= 0) {
       setError("Please select an item and enter a valid quantity")
       return
     }
 
-    // Validate that price per item is entered
+    // Validate that price is entered
     if (pricePerItem === "" || pricePerItem <= 0) {
       setError("Please enter a valid price per item")
       return
@@ -176,19 +176,33 @@ function SalesContent() {
       return
     }
 
-    if (quantity && quantity > item.quantity) {
-      setError("Not enough stock available")
+    // Calculate actual quantity and pricing based on sale type
+    let qty = typeof quantity === 'number' ? quantity : 0
+    let actualQuantity = qty
+    let pricePerUnit = typeof pricePerItem === 'number' ? pricePerItem : 0
+    let totalPrice = 0
+    
+    if (saleType === "box") {
+      // Box purchase: multiply quantity by 12 for inventory deduction
+      // User enters number of boxes and price per item
+      actualQuantity = qty * 12
+      pricePerUnit = pricePerItem
+      // Total is actual items × price per item
+      totalPrice = actualQuantity * pricePerUnit
+    } else {
+      // Retail: quantity and price are straightforward
+      totalPrice = actualQuantity * pricePerUnit
+    }
+
+    // Check stock with actual quantity
+    if (actualQuantity > item.quantity) {
+      setError(`Not enough stock available. Available: ${item.quantity} items${saleType === "box" ? ` (${Math.floor(item.quantity / 12)} boxes)` : ""}`)
       return
     }
-    
-    // Ensure quantity is a valid number
-    const qty = typeof quantity === 'number' ? quantity : 0
-    const price = typeof pricePerItem === 'number' ? pricePerItem : 0
-    const totalPrice = qty * price
 
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
-      if (existingItem.quantity + qty > item.quantity) {
+      if (existingItem.quantity + actualQuantity > item.quantity) {
         setError("Not enough stock available")
         return
       }
@@ -201,8 +215,8 @@ function SalesContent() {
         {
           itemId: selectedItemId,
           itemName: item.name,
-          quantity: qty,
-          pricePerUnit: price,
+          quantity: actualQuantity,
+          pricePerUnit: pricePerUnit,
           cashPrice: undefined,
           creditPrice: undefined,
           totalPrice,
@@ -396,7 +410,7 @@ function SalesContent() {
         const prices = []
         if (item.cashPrice) prices.push(`Cash: RS ${item.cashPrice.toFixed(2)}`)
         if (item.creditPrice) prices.push(`Credit: RS ${item.creditPrice.toFixed(2)}`)
-        return `${item.name} (x${item.quantity}) - ${prices.join(", ")}`
+        return `${item.itemName} (x${item.quantity}) - ${prices.join(", ")}`
       }).join("\n")
       
       let paymentInfo = ""
@@ -529,20 +543,28 @@ function SalesContent() {
                 type="radio"
                 value="retail"
                 checked={saleType === "retail"}
-                onChange={(e) => setSaleType(e.target.value as "retail" | "wholesale")}
+                onChange={(e) => setSaleType(e.target.value as "retail" | "box")}
               />
               <span>Retail</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="radio"
-                value="wholesale"
-                checked={saleType === "wholesale"}
-                onChange={(e) => setSaleType(e.target.value as "retail" | "wholesale")}
+                value="box"
+                checked={saleType === "box"}
+                onChange={(e) => setSaleType(e.target.value as "retail" | "box")}
               />
-              <span>Wholesale</span>
+              <span>Box Purchase</span>
             </label>
           </div>
+          
+          {saleType === "box" && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
+                ℹ️ <strong>Box Purchase:</strong> Enter the number of boxes and price per item. Each box contains 12 items. The system will automatically deduct the correct quantity from inventory (e.g., 5 boxes = 60 items deducted).
+              </p>
+            </div>
+          )}
         </Card> 
 
         {/* Purchaser Information */}
@@ -608,11 +630,14 @@ function SalesContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Quantity <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium mb-1">
+                    Quantity <span className="text-red-500">*</span>
+                    {saleType === "box" && " (Number of Boxes)"}
+                  </label>
                   <Input
                     type="text"
                     value={quantity}
-                    placeholder="Enter quantity"
+                    placeholder={saleType === "box" ? "Enter number of boxes" : "Enter quantity"}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => {
                       const val = e.target.value
@@ -622,10 +647,17 @@ function SalesContent() {
                       }
                     }}
                   />
+                  {saleType === "box" && quantity && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      ℹ️ Will deduct {quantity * 12} items from inventory (Quantity × 12)
+                    </p>
+                  )}
                 </div>
                   
                   <div>
-                  <label className="block text-sm font-medium mb-1">Price Per Item (RS) <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium mb-1">
+                    Price Per Item (RS) <span className="text-red-500">*</span>
+                  </label>
                     <Input
                       type="number"
                       min="0"
@@ -635,6 +667,11 @@ function SalesContent() {
                     onChange={(e) => setPricePerItem(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     className="font-semibold"
                     />
+                    {saleType === "box" && pricePerItem && quantity && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                        💰 Total: RS {(pricePerItem * quantity * 12).toFixed(2)} ({quantity * 12} items × RS {pricePerItem})
+                      </p>
+                    )}
                   </div>
                   
                   <div>
@@ -885,7 +922,7 @@ function SalesContent() {
                   >
                     <option value="all">All Types</option>
                     <option value="retail">Retail</option>
-                    <option value="wholesale">Wholesale</option>
+                    <option value="box">Box Purchase</option>
                   </select>
                 </div>
 
@@ -933,7 +970,7 @@ function SalesContent() {
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold">#{(index + 1).toString().padStart(4, '0')}</span>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              sale.type === "wholesale" 
+                              sale.type === "box" 
                                 ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
                                 : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                             }`}>
