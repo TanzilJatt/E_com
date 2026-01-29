@@ -207,13 +207,16 @@ function PurchaseContent() {
         qty = actualQuantity // Update qty to actual quantity
       }
 
-      // Check if item already exists in cart
+      // Check if purchase cost is different from item's inventory selling price
+      const isDifferentFromInventoryPrice = cost !== item.price
+      
+      // Check if item already exists in cart with same cost
       const existingCartItem = cart.find(
         (cartItem) => cartItem.itemId === item.id && cartItem.unitCost === cost
       )
 
-      if (existingCartItem) {
-        // Same item with same unit cost - update quantity
+      if (existingCartItem && !isDifferentFromInventoryPrice) {
+        // Same item with same cost as inventory and already in cart - update quantity
         const updatedCart = cart.map((cartItem) => {
           if (cartItem.itemId === item.id && cartItem.unitCost === cost) {
             const newQuantity = cartItem.quantity + qty
@@ -239,16 +242,22 @@ function PurchaseContent() {
           setTimeout(() => setSuccess(""), 3000)
         }, 300)
       } else {
-        // Check if item with same ID but different cost exists
-        const existingItemWithDifferentCost = cart.find(
-          (cartItem) => cartItem.itemId === item.id && cartItem.unitCost !== cost
-        )
-
+        // Need to check if we should add suffix
         let itemName = item.name
         let itemSku = item.sku
+        let shouldAddSuffix = false
 
-        if (existingItemWithDifferentCost) {
-          // Same item but different cost - add suffix to name
+        // Case 1: Purchase cost is different from inventory price
+        if (isDifferentFromInventoryPrice) {
+          shouldAddSuffix = true
+        }
+        // Case 2: Item with same ID exists in cart (any cost)
+        else if (cart.some((cartItem) => cartItem.itemId === item.id)) {
+          shouldAddSuffix = true
+        }
+
+        if (shouldAddSuffix) {
+          // Add suffix to name
           let suffix = 1
           let newName = `${item.name}_${suffix}`
           let newSku = `${item.sku}_${suffix}`
@@ -280,7 +289,12 @@ function PurchaseContent() {
 
           itemName = newName
           itemSku = newSku
-          setSuccess(`Item added as "${newName}" due to different cost.`)
+          
+          if (isDifferentFromInventoryPrice) {
+            setSuccess(`Item added as "${newName}" - Purchase cost (RS ${cost}) differs from inventory price (RS ${item.price}).`)
+          } else {
+            setSuccess(`Item added as "${newName}" due to different cost.`)
+          }
           setTimeout(() => setSuccess(""), 5000)
         }
 
@@ -366,12 +380,101 @@ function PurchaseContent() {
         finalQuantity = actualQuantity
       }
 
+      // Check if item with same name and cost already exists in cart
+      const existingCartItem = cart.find(
+        (cartItem) => 
+          cartItem.itemName.toLowerCase() === newItem.itemName.trim().toLowerCase() && 
+          cartItem.unitCost === cost
+      )
+
+      if (existingCartItem) {
+        // Same name and same cost - update quantity
+        const updatedCart = cart.map((cartItem) => {
+          if (cartItem.itemName.toLowerCase() === newItem.itemName.trim().toLowerCase() && cartItem.unitCost === cost) {
+            const newQuantity = cartItem.quantity + finalQuantity
+            const newTotalCost = newQuantity * cost
+            return {
+              ...cartItem,
+              quantity: newQuantity,
+              totalCost: newTotalCost,
+            }
+          }
+          return cartItem
+        })
+
+        setCart(updatedCart)
+        
+        // Reset form
+        setNewItem({
+          itemName: "",
+          quantity: "",
+          unitCost: "",
+          bulkPrice: "",
+          description: "",
+          vendor: "",
+          pricingType: "unit",
+        })
+
+        setSuccess(`Quantity updated! Added ${finalQuantity} more units to existing item.`)
+        setError("")
+
+        setTimeout(() => {
+          setSuccess("")
+          setIsAddingToCart(false)
+        }, 3000)
+        return
+      }
+
+      // Check if item with same name but different cost exists
+      const existingItemWithDifferentCost = cart.find(
+        (cartItem) => 
+          cartItem.itemName.toLowerCase() === newItem.itemName.trim().toLowerCase() && 
+          cartItem.unitCost !== cost
+      )
+
+      let itemName = newItem.itemName.trim()
+      let itemSku = "Will be auto-generated"
+
+      if (existingItemWithDifferentCost) {
+        // Same name but different cost - add suffix to name
+        let suffix = 1
+        let newName = `${newItem.itemName.trim()}_${suffix}`
+
+        // Keep incrementing suffix until we find an unused name
+        while (
+          cart.some(
+            (cartItem) =>
+              cartItem.itemName.toLowerCase() === newName.toLowerCase()
+          ) &&
+          suffix < 100
+        ) {
+          suffix++
+          newName = `${newItem.itemName.trim()}_${suffix}`
+        }
+
+        if (suffix >= 100) {
+          setError(`Too many variants of "${newItem.itemName}" in cart`)
+          setIsAddingToCart(false)
+          return
+        }
+
+        if (newName.length > 30) {
+          setError(`Generated name "${newName}" exceeds 30 characters`)
+          setIsAddingToCart(false)
+          return
+        }
+
+        itemName = newName
+        setSuccess(`Item added as "${newName}" due to different cost.`)
+        setTimeout(() => setSuccess(""), 5000)
+      }
+
       // Add to cart WITHOUT creating in inventory yet
       // Item will be created when "Complete Purchase" is clicked
       const cartItem: CartItem = {
         itemId: `temp-${Date.now()}`, // Temporary ID
-        itemName: newItem.itemName,
-        sku: "Will be auto-generated", // Will be replaced with actual SKU
+        itemName: itemName,
+        sku: itemSku,
         quantity: finalQuantity,
         unitCost: cost,
         totalCost: totalCost,
@@ -444,7 +547,7 @@ function PurchaseContent() {
       const updatedCart = await Promise.all(
         cart.map(async (item) => {
           if (item.isNewItem && item.newItemData) {
-            // Create the item in inventory first
+            // Create the item in inventory first (for new items added via "Add New Item")
             const itemId = await addItem(
               {
                 name: item.itemName,
@@ -468,18 +571,50 @@ function PurchaseContent() {
               itemId: itemId,
             }
           } else {
-            // Update existing item with new purchase price
-            const newSellingPrice = item.unitCost  // 20% markup
-            await updateItem(
-              item.itemId,
-              {
-                price: newSellingPrice,
-              },
-              userId
-            )
+            // Check if item has a suffix (e.g., "Laptop_1", "Mouse_2")
+            const hasSuffix = /_\d+$/.test(item.itemName)
+            
+            if (hasSuffix) {
+              // This is a variant with different cost - create as new item in inventory
+              // Find the original item to get vendor info
+              const originalItem = items.find(i => i.id === item.itemId)
+              
+              const newItemId = await addItem(
+                {
+                  name: item.itemName,
+                  price: item.unitCost, // Use purchase cost as selling price for variant
+                  quantity: 0, // Will be updated after purchase
+                  description: originalItem?.description || `Variant of ${originalItem?.name || item.itemName}`,
+                  vendor: originalItem?.vendor || "",
+                },
+                userId,
+                userName
+              )
+
+              if (!newItemId) {
+                throw new Error(`Failed to create variant item: ${item.itemName}`)
+              }
+
+              // Return with new itemId
+              return {
+                ...item,
+                itemId: newItemId,
+              }
+            } else {
+              // No suffix - this is the original item, just update its price if needed
+              const newSellingPrice = item.unitCost
+              await updateItem(
+                item.itemId,
+                {
+                  price: newSellingPrice,
+                },
+                userId
+              )
+              
+              // Return existing item as-is
+              return item
+            }
           }
-          // Return existing item as-is
-          return item
         })
       )
       
@@ -542,7 +677,7 @@ function PurchaseContent() {
       const updatedCart = await Promise.all(
         cart.map(async (item) => {
           if (item.isNewItem && item.newItemData) {
-            // Create the item in inventory first
+            // Create the item in inventory first (for new items added via "Add New Item")
             const itemId = await addItem(
               {
                 name: item.itemName,
@@ -566,18 +701,50 @@ function PurchaseContent() {
               itemId: itemId,
             }
           } else {
-            // Update existing item with new purchase price
-            const newSellingPrice = item.unitCost  // 20% markup
-            await updateItem(
-              item.itemId,
-              {
-                price: newSellingPrice,
-              },
-              userId
-            )
+            // Check if item has a suffix (e.g., "Laptop_1", "Mouse_2")
+            const hasSuffix = /_\d+$/.test(item.itemName)
+            
+            if (hasSuffix) {
+              // This is a variant with different cost - create as new item in inventory
+              // Find the original item to get vendor info
+              const originalItem = items.find(i => i.id === item.itemId)
+              
+              const newItemId = await addItem(
+                {
+                  name: item.itemName,
+                  price: item.unitCost, // Use purchase cost as selling price for variant
+                  quantity: 0, // Will be updated after purchase
+                  description: originalItem?.description || `Variant of ${originalItem?.name || item.itemName}`,
+                  vendor: originalItem?.vendor || "",
+                },
+                userId,
+                userName
+              )
+
+              if (!newItemId) {
+                throw new Error(`Failed to create variant item: ${item.itemName}`)
+              }
+
+              // Return with new itemId
+              return {
+                ...item,
+                itemId: newItemId,
+              }
+            } else {
+              // No suffix - this is the original item, just update its price if needed
+              const newSellingPrice = item.unitCost
+              await updateItem(
+                item.itemId,
+                {
+                  price: newSellingPrice,
+                },
+                userId
+              )
+              
+              // Return existing item as-is
+              return item
+            }
           }
-          // Return existing item as-is
-          return item
         })
       )
       
@@ -930,15 +1097,16 @@ function PurchaseContent() {
                 </div>
                 
                 {/* Duplicate Handling Info */}
-                {/* <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                   <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
                     <strong>🔄 Smart Duplicate Handling:</strong>
                   </p>
                   <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 ml-4 list-disc">
-                    <li><strong>Same item + same cost:</strong> Quantity will be added to existing cart entry</li>
-                    <li><strong>Same item + different cost:</strong> New entry created as "name_1", "name_2", etc.</li>
+                    <li><strong>Same cost as inventory price:</strong> Quantity added to existing entry (if any)</li>
+                    <li><strong>Different cost from inventory price:</strong> New entry created as "name_1", "name_2", etc.</li>
+                    <li><strong>Note:</strong> Purchase cost is compared with item's inventory selling price</li>
                   </ul>
-                </div> */}
+                </div>
 
                 <Button onClick={handleAddExistingItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
@@ -1126,11 +1294,17 @@ function PurchaseContent() {
                     </p> */}
                   </div>
 
-                  {/* <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                    <p className="text-sm text-blue-800 dark:text-blue-300">
-                      ℹ️ <strong>Note:</strong> SKU will be auto-generated. This item will be automatically added to your inventory.
+                  {/* Duplicate Handling Info */}
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
+                      <strong>🔄 Smart Duplicate Handling:</strong>
                     </p>
-                  </div> */}
+                    <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 ml-4 list-disc">
+                      <li><strong>Same name + same cost:</strong> Quantity will be added to existing cart entry</li>
+                      <li><strong>Same name + different cost:</strong> New entry created as "name_1", "name_2", etc.</li>
+                      <li><strong>Note:</strong> SKU will be auto-generated when purchase is completed</li>
+                    </ul>
+                  </div>
                 </div>
                 <Button onClick={handleAddNewItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
