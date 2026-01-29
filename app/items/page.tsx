@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
@@ -14,6 +14,9 @@ import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import * as XLSX from "xlsx"
+import { toast } from "sonner"
+import { FileSpreadsheet, Download, Upload, Info } from "lucide-react"
 
 function ItemsContent() {
   const [items, setItems] = useState<Item[]>([])
@@ -34,6 +37,10 @@ function ItemsContent() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, errors: [] as string[] })
+  const [showImportHelp, setShowImportHelp] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Listen for auth state changes
   useEffect(() => {
@@ -163,6 +170,244 @@ function ItemsContent() {
     }
   }
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsImporting(true)
+    setImportProgress({ current: 0, total: 0, errors: [] })
+
+    try {
+      // Read the Excel file
+      const data = await file.arrayBuffer()
+      const workbook = XLSX.read(data, { type: "array" })
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[]
+
+      if (jsonData.length === 0) {
+        setError("Excel file is empty")
+        setIsImporting(false)
+        return
+      }
+
+      // Fetch current items to check for duplicates
+      const { getItems } = await import("@/lib/items")
+      const currentItems = await getItems(currentUserId || undefined)
+
+      setImportProgress({ current: 0, total: jsonData.length, errors: [] })
+      const errors: string[] = []
+      let successCount = 0
+      let updatedCount = 0
+
+      // Process each row
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i]
+        const rowNum = i + 2 // Excel rows start at 1, plus 1 for header
+
+        try {
+          // Validate required fields
+          let name = row.name || row.Name || row.item_name || row["Item Name"] || ""
+          const price = Number(row.price || row.Price || 0)
+          const quantity = Number(row.quantity || row.Quantity || 0)
+          const description = row.description || row.Description || ""
+          const vendor = row.vendor || row.Vendor || ""
+
+          if (!name) {
+            errors.push(`Row ${rowNum}: Item name is required`)
+            continue
+          }
+
+          if (price < 0) {
+            errors.push(`Row ${rowNum}: Price must be positive`)
+            continue
+          }
+
+          if (quantity < 0) {
+            errors.push(`Row ${rowNum}: Quantity must be positive`)
+            continue
+          }
+
+          if (name.length > 30) {
+            errors.push(`Row ${rowNum}: Name must be 30 characters or less`)
+            continue
+          }
+
+          if (vendor.length > 30) {
+            errors.push(`Row ${rowNum}: Vendor name must be 30 characters or less`)
+            continue
+          }
+
+          if (description.length > 100) {
+            errors.push(`Row ${rowNum}: Description must be 100 characters or less`)
+            continue
+          }
+
+          // Check if item with same name exists
+          const trimmedName = name.trim()
+          const existingItem = currentItems.find(
+            (item) => item.name.toLowerCase() === trimmedName.toLowerCase()
+          )
+
+          if (existingItem) {
+            // Item exists - check if price matches
+            if (existingItem.price === price) {
+              // Same name and price - update quantity (add to existing)
+              const newQuantity = existingItem.quantity + quantity
+              await updateItem(
+                existingItem.id,
+                { quantity: newQuantity },
+                auth?.currentUser?.uid || "system"
+              )
+              updatedCount++
+              successCount++
+              
+              // Update the currentItems array for subsequent checks
+              const itemIndex = currentItems.findIndex((item) => item.id === existingItem.id)
+              if (itemIndex !== -1) {
+                currentItems[itemIndex].quantity = newQuantity
+              }
+              
+              setImportProgress({ current: i + 1, total: jsonData.length, errors })
+              continue
+            } else {
+              // Same name but different price - create new item with suffix
+              let suffix = 1
+              let newName = `${trimmedName}_${suffix}`
+              
+              // Keep incrementing suffix until we find an unused name
+              while (
+                currentItems.some(
+                  (item) => item.name.toLowerCase() === newName.toLowerCase()
+                ) &&
+                suffix < 100 // Safety limit
+              ) {
+                suffix++
+                newName = `${trimmedName}_${suffix}`
+              }
+              
+              if (suffix >= 100) {
+                errors.push(`Row ${rowNum}: Too many items with name "${trimmedName}"`)
+                continue
+              }
+              
+              if (newName.length > 30) {
+                errors.push(`Row ${rowNum}: Generated name "${newName}" exceeds 30 characters`)
+                continue
+              }
+              
+              name = newName
+            }
+          }
+
+          // Add new item to database
+          const itemId = await addItem(
+            {
+              name: name.trim(),
+              price,
+              quantity,
+              description: description.trim(),
+              vendor: vendor.trim(),
+            },
+            auth?.currentUser?.uid || "system",
+            auth?.currentUser?.displayName || "System"
+          )
+
+          // Add to currentItems array for subsequent duplicate checks
+          if (itemId) {
+            currentItems.push({
+              id: itemId,
+              name: name.trim(),
+              price,
+              quantity,
+              description: description.trim(),
+              vendor: vendor.trim(),
+              sku: "", // Will be generated by backend
+              createdAt: null,
+              createdBy: auth?.currentUser?.uid || "system",
+              updatedAt: null,
+              updatedBy: auth?.currentUser?.uid || "system",
+            })
+          }
+
+          successCount++
+          setImportProgress({ current: i + 1, total: jsonData.length, errors })
+        } catch (err: any) {
+          errors.push(`Row ${rowNum}: ${err.message || "Failed to add item"}`)
+          setImportProgress({ current: i + 1, total: jsonData.length, errors })
+        }
+      }
+
+      // Refresh items list
+      await fetchItems()
+
+      // Show summary
+      const addedCount = successCount - updatedCount
+      if (errors.length > 0) {
+        setError(
+          `Import completed: ${addedCount} added, ${updatedCount} updated, ${errors.length} failed. Check console for details.`
+        )
+        console.error("Import errors:", errors)
+        toast.warning(`Import completed with some errors`, {
+          description: `${addedCount} added, ${updatedCount} updated, ${errors.length} failed. Check error list for details.`,
+        })
+      } else {
+        setError("")
+        if (updatedCount > 0) {
+          toast.success(`Successfully processed ${successCount} items!`, {
+            description: `${addedCount} new items added, ${updatedCount} quantities updated.`,
+          })
+        } else {
+          toast.success(`Successfully imported ${successCount} items!`, {
+            description: "All items have been added to your inventory.",
+          })
+        }
+      }
+    } catch (err: any) {
+      console.error("Error importing Excel:", err)
+      setError(`Failed to import Excel file: ${err.message}`)
+      toast.error("Import failed", {
+        description: err.message || "An error occurred while importing the Excel file.",
+      })
+    } finally {
+      setIsImporting(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+    }
+  }
+
+  const downloadExcelTemplate = () => {
+    // Create a sample Excel template
+    const templateData = [
+      {
+        name: "Sample Item",
+        price: 100.00,
+        quantity: 50,
+        description: "This is a sample item description",
+        vendor: "Sample Vendor",
+      },
+    ]
+
+    const worksheet = XLSX.utils.json_to_sheet(templateData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Items")
+
+    // Set column widths
+    worksheet["!cols"] = [
+      { wch: 30 }, // name
+      { wch: 10 }, // price
+      { wch: 10 }, // quantity
+      { wch: 50 }, // description
+      { wch: 30 }, // vendor
+    ]
+
+    XLSX.writeFile(workbook, "items-import-template.xlsx")
+    toast.success("Template downloaded!", {
+      description: "Fill in your items data and import the Excel file.",
+    })
+  }
+
   const exportItemsToPDF = () => {
     const doc = new jsPDF()
     
@@ -253,8 +498,127 @@ function ItemsContent() {
             <h1 className="text-3xl font-bold text-foreground">Inventory Items</h1>
             <p className="text-muted-foreground mt-2">Manage your product catalog</p>
           </div>
-          <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Item"}</Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={downloadExcelTemplate} className="gap-2">
+              <Download className="h-4 w-4" />
+              Download Template
+            </Button>
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="gap-2">
+              <Upload className="h-4 w-4" />
+              {isImporting ? "Importing..." : "Import Excel"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowImportHelp(!showImportHelp)}
+              title="Import Help"
+            >
+              <Info className="h-4 w-4" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleImportExcel}
+              style={{ display: "none" }}
+            />
+            <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Item"}</Button>
+          </div>
         </div>
+
+        {/* Import Help */}
+        {showImportHelp && (
+          <Card className="p-6 mb-8 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                How to Import Items from Excel
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowImportHelp(false)}>
+                ✕
+              </Button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div>
+                <h3 className="font-semibold mb-2">Step 1: Download Template</h3>
+                <p className="text-muted-foreground">
+                  Click "Download Template" to get a sample Excel file with the correct format.
+                </p>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">Step 2: Fill Your Data</h3>
+                <p className="text-muted-foreground mb-2">Your Excel file must have these columns:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
+                  <li><strong>name</strong> (required, max 30 chars) - Item name</li>
+                  <li><strong>price</strong> (required, positive number) - Item price</li>
+                  <li><strong>quantity</strong> (required, positive number) - Stock quantity</li>
+                  <li><strong>description</strong> (optional, max 100 chars) - Item description</li>
+                  <li><strong>vendor</strong> (optional, max 30 chars) - Vendor name</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">Step 3: Import Your File</h3>
+                <p className="text-muted-foreground">
+                  Click "Import Excel" and select your file. The system will validate each row and import valid items.
+                </p>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-3 rounded-lg">
+                <p className="font-semibold mb-1">💡 Tips:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2 text-xs">
+                  <li>SKU is auto-generated - don't include it in your Excel</li>
+                  <li>Only use letters, numbers, and spaces in name and vendor fields</li>
+                  <li>Test with a small file first (3-5 items)</li>
+                  <li>Check the error list if some items fail to import</li>
+                </ul>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-3 rounded-lg">
+                <p className="font-semibold mb-1">🔄 Duplicate Handling:</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2 text-xs">
+                  <li><strong>Same name + same price:</strong> Quantity is added to existing item</li>
+                  <li><strong>Same name + different price:</strong> New item created as "name_1", "name_2", etc.</li>
+                  <li>This prevents accidental overwrites while allowing stock updates</li>
+                </ul>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Import Progress */}
+        {isImporting && (
+          <Card className="p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-4">Importing Items...</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Progress</span>
+                <span className="font-medium">
+                  {importProgress.current} / {importProgress.total}
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-2.5">
+                <div
+                  className="bg-primary h-2.5 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${(importProgress.current / importProgress.total) * 100}%`,
+                  }}
+                />
+              </div>
+              {importProgress.errors.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-amber-600 mb-2">
+                    {importProgress.errors.length} errors occurred:
+                  </p>
+                  <div className="max-h-40 overflow-y-auto bg-muted p-3 rounded-lg">
+                    {importProgress.errors.map((error, index) => (
+                      <p key={index} className="text-xs text-muted-foreground mb-1">
+                        {error}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {isAdding && (
           <Card className="p-6 mb-8">

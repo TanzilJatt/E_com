@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Poppins } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthGuard } from "@/components/auth-guard"
+import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
 const poppins = Poppins({
@@ -45,6 +46,7 @@ export default function RootLayout({
         <AuthGuard>
           {children}
         </AuthGuard>
+        <Toaster />
         <Analytics />
       </body>
     </html>

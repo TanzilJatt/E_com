@@ -207,31 +207,109 @@ function PurchaseContent() {
         qty = actualQuantity // Update qty to actual quantity
       }
 
-      const cartItem: CartItem = {
-        itemId: item.id,
-        itemName: item.name,
-        sku: item.sku,
-        quantity: qty,
-        unitCost: cost,
-        totalCost: totalCost,
-        pricingType: existingItemPricingType,
-      }
-      
-      // Only add bulkPrice if it's defined
-      if (existingItemPricingType === "bulk" && bulkPrice) {
-        cartItem.bulkPrice = parseFloat(bulkPrice)
-      }
+      // Check if item already exists in cart
+      const existingCartItem = cart.find(
+        (cartItem) => cartItem.itemId === item.id && cartItem.unitCost === cost
+      )
 
-      // Small delay to show loading state
-      setTimeout(() => {
-        setCart([...cart, cartItem])
-        setSelectedItem("")
-        setQuantity("")
-        setUnitCost("")
-        setBulkPrice("")
-        setError("")
-        setIsAddingToCart(false)
-      }, 300)
+      if (existingCartItem) {
+        // Same item with same unit cost - update quantity
+        const updatedCart = cart.map((cartItem) => {
+          if (cartItem.itemId === item.id && cartItem.unitCost === cost) {
+            const newQuantity = cartItem.quantity + qty
+            const newTotalCost = newQuantity * cost
+            return {
+              ...cartItem,
+              quantity: newQuantity,
+              totalCost: newTotalCost,
+            }
+          }
+          return cartItem
+        })
+
+        setTimeout(() => {
+          setCart(updatedCart)
+          setSelectedItem("")
+          setQuantity("")
+          setUnitCost("")
+          setBulkPrice("")
+          setError("")
+          setSuccess(`Quantity updated! Added ${qty} more units to existing item.`)
+          setIsAddingToCart(false)
+          setTimeout(() => setSuccess(""), 3000)
+        }, 300)
+      } else {
+        // Check if item with same ID but different cost exists
+        const existingItemWithDifferentCost = cart.find(
+          (cartItem) => cartItem.itemId === item.id && cartItem.unitCost !== cost
+        )
+
+        let itemName = item.name
+        let itemSku = item.sku
+
+        if (existingItemWithDifferentCost) {
+          // Same item but different cost - add suffix to name
+          let suffix = 1
+          let newName = `${item.name}_${suffix}`
+          let newSku = `${item.sku}_${suffix}`
+
+          // Keep incrementing suffix until we find an unused name
+          while (
+            cart.some(
+              (cartItem) =>
+                cartItem.itemName.toLowerCase() === newName.toLowerCase()
+            ) &&
+            suffix < 100
+          ) {
+            suffix++
+            newName = `${item.name}_${suffix}`
+            newSku = `${item.sku}_${suffix}`
+          }
+
+          if (suffix >= 100) {
+            setError(`Too many variants of "${item.name}" in cart`)
+            setIsAddingToCart(false)
+            return
+          }
+
+          if (newName.length > 30) {
+            setError(`Generated name "${newName}" exceeds 30 characters`)
+            setIsAddingToCart(false)
+            return
+          }
+
+          itemName = newName
+          itemSku = newSku
+          setSuccess(`Item added as "${newName}" due to different cost.`)
+          setTimeout(() => setSuccess(""), 5000)
+        }
+
+        const cartItem: CartItem = {
+          itemId: item.id,
+          itemName: itemName,
+          sku: itemSku,
+          quantity: qty,
+          unitCost: cost,
+          totalCost: totalCost,
+          pricingType: existingItemPricingType,
+        }
+
+        // Only add bulkPrice if it's defined
+        if (existingItemPricingType === "bulk" && bulkPrice) {
+          cartItem.bulkPrice = parseFloat(bulkPrice)
+        }
+
+        // Small delay to show loading state
+        setTimeout(() => {
+          setCart([...cart, cartItem])
+          setSelectedItem("")
+          setQuantity("")
+          setUnitCost("")
+          setBulkPrice("")
+          setError("")
+          setIsAddingToCart(false)
+        }, 300)
+      }
     } catch (err) {
       setError("Failed to add item to cart")
       setIsAddingToCart(false)
@@ -851,13 +929,16 @@ function PurchaseContent() {
                   )}
                 </div>
                 
-                {/* {existingItemPricingType === "bulk" && (
-                  <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
-                      ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
-                    </p>
-                  </div>
-                )} */}
+                {/* Duplicate Handling Info */}
+                {/* <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
+                    <strong>🔄 Smart Duplicate Handling:</strong>
+                  </p>
+                  <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 ml-4 list-disc">
+                    <li><strong>Same item + same cost:</strong> Quantity will be added to existing cart entry</li>
+                    <li><strong>Same item + different cost:</strong> New entry created as "name_1", "name_2", etc.</li>
+                  </ul>
+                </div> */}
 
                 <Button onClick={handleAddExistingItem} className="mt-4 w-full sm:w-auto" disabled={isSubmitting || isAddingToCart}>
                   {isAddingToCart ? (
