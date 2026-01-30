@@ -161,14 +161,14 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
               onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
               className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
             >
-              <option value="today">Today {getDateRangeText("today")}</option>
-              <option value="yesterday">Yesterday {getDateRangeText("yesterday")}</option>
-              <option value="this_week">This Week {getDateRangeText("this_week")}</option>
-              <option value="last_week">Last Week {getDateRangeText("last_week")}</option>
-              <option value="this_month">This Month {getDateRangeText("this_month")}</option>
-              <option value="last_month">Last Month {getDateRangeText("last_month")}</option>
-              <option value="this_year">This Year {getDateRangeText("this_year")}</option>
-              <option value="last_year">Last Year {getDateRangeText("last_year")}</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="this_year">This Year</option>
+              <option value="last_year">Last Year</option>
               <option value="custom">Custom Range</option>
             </select>
           </div>
