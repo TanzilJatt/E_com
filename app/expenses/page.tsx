@@ -266,37 +266,40 @@ function ExpensesContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-start mb-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        {/* Header - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Expenses</h1>
-            <p className="text-muted-foreground mt-2">Track and manage your business expenses</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Expenses</h1>
+            <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Track and manage your business expenses</p>
           </div>
-          <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Expense"}</Button>
+          <Button onClick={() => setIsAdding(!isAdding)} className="w-full sm:w-auto">
+            {isAdding ? "Cancel" : "+ Add Expense"}
+          </Button>
         </div>
 
         {/* Date Filter */}
         <DateFilter onFilter={handleDateFilter} />
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Total Expenses</div>
-            <div className="text-3xl font-bold text-primary mt-2">RS {totalExpenses.toFixed(2)}</div>
+        {/* Stats - Mobile Responsive */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Expenses</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">RS {totalExpenses.toFixed(2)}</div>
           </Card>
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Total Transactions</div>
-            <div className="text-3xl font-bold text-primary mt-2">{expenses.length}</div>
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Transactions</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">{expenses.length}</div>
           </Card>
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Categories</div>
-            <div className="text-3xl font-bold text-primary mt-2">{Object.keys(categoryBreakdown).length}</div>
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Categories</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">{Object.keys(categoryBreakdown).length}</div>
           </Card>
         </div>
 
         {isAdding && (
-          <Card className="p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">{editingId ? "Edit Expense" : "Add New Expense"}</h2>
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">{editingId ? "Edit Expense" : "Add New Expense"}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Expense Name <span className="text-red-500">*</span></label>
@@ -402,26 +405,33 @@ function ExpensesContent() {
           </Card>
         )}
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* Charts - Mobile Responsive */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8">
           {chartData.length > 0 && (
             <>
-              <Card className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Expenses by Category</h2>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <Card className="p-4 sm:p-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Expenses by Category</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                    <XAxis dataKey="name" stroke="var(--muted-foreground)" angle={-45} textAnchor="end" height={80} />
-                    <YAxis stroke="var(--muted-foreground)" />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="var(--muted-foreground)" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis stroke="var(--muted-foreground)" tick={{ fontSize: 11 }} />
                     <Tooltip />
                     <Bar dataKey="value" fill="var(--primary)" />
                   </BarChart>
                 </ResponsiveContainer>
               </Card>
 
-              <Card className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Distribution</h2>
-                <ResponsiveContainer width="100%" height={300}>
+              <Card className="p-4 sm:p-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Distribution</h2>
+                <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie
                       data={chartData}
@@ -429,7 +439,7 @@ function ExpensesContent() {
                       cy="50%"
                       labelLine={false}
                       label={({ name, value }) => `${name}: RS ${value}`}
-                      outerRadius={80}
+                      outerRadius={70}
                       fill="#8884d8"
                       dataKey="value"
                     >
@@ -445,19 +455,19 @@ function ExpensesContent() {
           )}
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-4 mb-6 flex-wrap items-center">
+        {/* Filters - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:items-center">
           <Input
             type="text"
             placeholder="Search by name or description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-md"
+            className="w-full sm:max-w-md"
           />
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="border border-input rounded-lg p-2 bg-background text-foreground"
+            className="w-full sm:w-auto border border-input rounded-lg p-2 bg-background text-foreground"
           >
             <option value="All">All Categories</option>
             {EXPENSE_CATEGORIES.map((cat) => (
@@ -466,77 +476,168 @@ function ExpensesContent() {
               </option>
             ))}
           </select>
-          <Button onClick={exportExpensesToPDF} disabled={filteredExpenses.length === 0}>
+          <Button 
+            onClick={exportExpensesToPDF} 
+            disabled={filteredExpenses.length === 0}
+            className="w-full sm:w-auto"
+          >
             Export PDF
           </Button>
         </div>
 
-        {/* Expenses List */}
+        {/* Expenses Display - Mobile Cards & Desktop Table */}
         {loading ? (
           <Card className="p-12 text-center">
             <p className="text-muted-foreground">Loading expenses...</p>
           </Card>
+        ) : filteredExpenses.length === 0 ? (
+          <Card className="p-8 sm:p-12 text-center">
+            <p className="text-muted-foreground text-sm sm:text-base">
+              {expenses.length === 0
+                ? "No expenses recorded yet. Start by adding your first expense!"
+                : "No expenses match your filters."}
+            </p>
+          </Card>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4">Expense</th>
-                    <th className="text-left py-3 px-4">Category</th>
-                    <th className="text-left py-3 px-4">Date & Time</th>
-                    <th className="text-right py-3 px-4">Amount</th>
-                    <th className="text-left py-3 px-4">Description</th>
-                    <th className="text-center py-3 px-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredExpenses.map((expense) => (
-                    <tr key={expense.id} className="border-b border-border hover:bg-muted">
-                      <td className="py-3 px-4 font-medium">{expense.name}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                          {expense.category}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="text-xs text-muted-foreground">
-                          <div>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</div>
-                          <div className="text-[10px]">{expense.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold">RS {expense.amount.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-xs text-muted-foreground line-clamp-1">{expense.description}</td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex gap-1 justify-center">
-                          <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 bg-transparent"
-                            onClick={() => handleDelete(expense.id, expense.name)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-4">
+              {filteredExpenses.map((expense) => (
+                <Card key={expense.id} className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{expense.name}</h3>
+                      <span className="inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        {expense.category}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Amount</div>
+                      <div className="font-bold text-lg text-primary">RS {expense.amount.toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    {expense.description && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Description:</span>
+                        <p className="text-sm mt-1">{expense.description}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Date:</span>
+                      <span>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Created:</span>
+                      <span>{expense.createdAt?.toDate?.()?.toLocaleString() || "N/A"}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => handleEdit(expense)}
+                      className="flex-1"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      onClick={() => handleDelete(expense.id, expense.name)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+
+              {/* Mobile Summary */}
+              <Card className="p-4 bg-muted/30">
+                <div className="space-y-2">
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Expenses:</span>
+                    <span>{filteredExpenses.length}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-primary text-lg pt-2 border-t">
+                    <span>Total Amount:</span>
+                    <span>RS {filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0).toFixed(2)}</span>
+                  </div>
+                </div>
+              </Card>
             </div>
 
-            {filteredExpenses.length === 0 && (
-              <Card className="p-12 text-center">
-                <p className="text-muted-foreground">
-                  {expenses.length === 0
-                    ? "No expenses recorded yet. Start by adding your first expense!"
-                    : "No expenses match your filters."}
-                </p>
-              </Card>
-            )}
+            {/* Desktop Table View */}
+            <Card className="hidden lg:block overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 font-semibold">Expense</th>
+                      <th className="text-left py-3 px-4 font-semibold">Category</th>
+                      <th className="text-left py-3 px-4 font-semibold">Date & Time</th>
+                      <th className="text-right py-3 px-4 font-semibold">Amount</th>
+                      <th className="text-left py-3 px-4 font-semibold">Description</th>
+                      <th className="text-center py-3 px-4 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredExpenses.map((expense, index) => (
+                      <tr 
+                        key={expense.id} 
+                        className={`border-b border-border hover:bg-muted/30 transition-colors ${
+                          index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                        }`}
+                      >
+                        <td className="py-3 px-4 font-medium">{expense.name}</td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                            {expense.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-xs text-muted-foreground">
+                            <div>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</div>
+                            <div className="text-[10px]">{expense.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold">RS {expense.amount.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-xs text-muted-foreground line-clamp-1">{expense.description}</td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 bg-transparent hover:bg-red-50 dark:hover:bg-red-950"
+                              onClick={() => handleDelete(expense.id, expense.name)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/30 border-t-2 border-border">
+                    <tr>
+                      <td colSpan={3} className="py-3 px-4 font-semibold">
+                        Total ({filteredExpenses.length} expenses)
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-primary text-lg">
+                        RS {filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0).toFixed(2)}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
           </>
         )}
       </main>

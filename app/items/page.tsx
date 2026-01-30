@@ -16,9 +16,11 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
-import { FileSpreadsheet, Download, Upload, Info } from "lucide-react"
+import { FileSpreadsheet, Download, Upload, Info, Scale } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 function ItemsContent() {
+  const router = useRouter()
   const [items, setItems] = useState<Item[]>([])
   const [allItems, setAllItems] = useState<Item[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -492,26 +494,50 @@ function ItemsContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-start mb-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        {/* Header - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Inventory Items</h1>
-            <p className="text-muted-foreground mt-2">Manage your product catalog</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Inventory Items</h1>
+            <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Manage your product catalog</p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={downloadExcelTemplate} className="gap-2">
-              <Download className="h-4 w-4" />
-              Download Template
+          
+          {/* Action Buttons - Mobile Responsive */}
+          <div className="flex flex-wrap gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => router.push("/balance")} 
+              className="gap-2 flex-1 sm:flex-initial"
+            >
+              <Scale className="h-4 w-4" />
+              <span className="hidden sm:inline">Balance Sheet</span>
+              <span className="sm:hidden">Balance</span>
             </Button>
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={downloadExcelTemplate} 
+              className="gap-2 flex-1 sm:flex-initial"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Download Template</span>
+              <span className="sm:hidden">Download</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={isImporting} 
+              className="gap-2 flex-1 sm:flex-initial"
+            >
               <Upload className="h-4 w-4" />
-              {isImporting ? "Importing..." : "Import Excel"}
+              <span className="hidden sm:inline">{isImporting ? "Importing..." : "Import Excel"}</span>
+              <span className="sm:hidden">{isImporting ? "Importing..." : "Import"}</span>
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setShowImportHelp(!showImportHelp)}
               title="Import Help"
+              className="flex-shrink-0"
             >
               <Info className="h-4 w-4" />
             </Button>
@@ -522,17 +548,23 @@ function ItemsContent() {
               onChange={handleImportExcel}
               style={{ display: "none" }}
             />
-            <Button onClick={() => setIsAdding(!isAdding)}>{isAdding ? "Cancel" : "+ Add Item"}</Button>
+            <Button 
+              onClick={() => setIsAdding(!isAdding)} 
+              className="w-full sm:w-auto"
+            >
+              {isAdding ? "Cancel" : "+ Add Item"}
+            </Button>
           </div>
         </div>
 
-        {/* Import Help */}
+        {/* Import Help - Mobile Responsive */}
         {showImportHelp && (
-          <Card className="p-6 mb-8 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
             <div className="flex items-start justify-between mb-4">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5" />
-                How to Import Items from Excel
+                <span className="hidden sm:inline">How to Import Items from Excel</span>
+                <span className="sm:hidden">Import Guide</span>
               </h2>
               <Button variant="ghost" size="sm" onClick={() => setShowImportHelp(false)}>
                 ✕
@@ -583,10 +615,10 @@ function ItemsContent() {
           </Card>
         )}
 
-        {/* Import Progress */}
+        {/* Import Progress - Mobile Responsive */}
         {isImporting && (
-          <Card className="p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">Importing Items...</h2>
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">Importing Items...</h2>
             <div className="space-y-3">
               <div className="flex justify-between text-sm">
                 <span>Progress</span>
@@ -621,8 +653,8 @@ function ItemsContent() {
         )}
 
         {isAdding && (
-          <Card className="p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">{editingId ? "Edit Item" : "Add New Item"}</h2>
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">{editingId ? "Edit Item" : "Add New Item"}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Item Name <span className="text-red-500">*</span></label>
@@ -741,20 +773,25 @@ function ItemsContent() {
         <DateFilter onFilter={handleDateFilter} />
 
         {/* Search */}
-        <div className="mb-6 flex gap-4 items-center">
+        {/* Search and Export - Mobile Responsive */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
           <Input
             type="text"
             placeholder="Search by name, SKU, or vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-md"
+            className="w-full sm:max-w-md"
           />
-          <Button onClick={exportItemsToPDF} disabled={filteredItems.length === 0}>
+          <Button 
+            onClick={exportItemsToPDF} 
+            disabled={filteredItems.length === 0}
+            className="w-full sm:w-auto"
+          >
             Export PDF
           </Button>
         </div>
 
-        {/* Items Table */}
+        {/* Items Display - Mobile Cards & Desktop Table */}
         {loading ? (
           <Card className="p-12 text-center">
             <p className="text-muted-foreground">Loading items...</p>
@@ -768,115 +805,204 @@ function ItemsContent() {
             </p>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/50">
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-semibold text-sm">SKU</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
-                    <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
-                    <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
-                    <th className="text-right py-3 px-4 font-semibold text-sm">Total Value</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Last Updated</th>
-                    <th className="text-center py-3 px-4 font-semibold text-sm">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map((item, index) => (
-                    <tr 
-                      key={item.id} 
-                      className={`border-b border-border hover:bg-muted/30 transition-colors ${
-                        index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
-                      }`}
+          <>
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-4">
+              {filteredItems.map((item) => (
+                <Card key={item.id} className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{item.name}</h3>
+                      <p className="text-xs text-muted-foreground font-mono mt-1">{item.sku}</p>
+                    </div>
+                    <div className={`text-right ${item.quantity < 10 ? "text-red-600" : ""}`}>
+                      <div className="text-xs text-muted-foreground">Stock</div>
+                      <div className="font-semibold text-lg">{item.quantity}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    {item.vendor && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Vendor:</span>
+                        <span>{item.vendor}</span>
+                      </div>
+                    )}
+                    {item.description && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Description:</span>
+                        <p className="text-sm mt-1">{item.description}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Price:</span>
+                      <span className="font-semibold">RS {item.price.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm border-t pt-2">
+                      <span className="text-muted-foreground">Total Value:</span>
+                      <span className="font-bold text-primary">RS {(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Created:</span>
+                      <span>{item.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Updated:</span>
+                      <span>{item.updatedAt?.toDate?.()?.toLocaleDateString() || "N/A"}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => handleEdit(item)}
+                      className="flex-1"
                     >
-                      <td className="py-3 px-4">
-                        <span className="font-mono text-sm font-medium">{item.sku}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="font-medium">{item.name}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-sm text-muted-foreground">
-                          {item.vendor || "—"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 max-w-xs">
-                        <span className="text-sm text-muted-foreground line-clamp-2">
-                          {item.description || "No description"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="font-semibold">RS {item.price.toFixed(2)}</span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
-                          {item.quantity}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="font-semibold text-primary">
-                          RS {(item.price * item.quantity).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="text-xs text-muted-foreground">
-                          <div>{item.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
-                          <div className="text-[10px]">{item.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="text-xs text-muted-foreground">
-                          <div>{item.updatedAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
-                          <div className="text-[10px]">{item.updatedAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex gap-2 justify-center">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => handleEdit(item)}
-                            className="h-8"
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950 h-8"
-                            onClick={() => handleDelete(item.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-muted/30 border-t-2 border-border">
-                  <tr>
-                    <td colSpan={4} className="py-3 px-4 font-semibold">
-                      Total ({filteredItems.length} items)
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold">
-                      RS {filteredItems.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold">
-                      {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold text-primary text-lg">
-                      RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
-                    </td>
-                    <td colSpan={3}></td>
-                  </tr>
-                </tfoot>
-              </table>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      onClick={() => handleDelete(item.id)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+
+              {/* Mobile Summary */}
+              <Card className="p-4 bg-muted/30">
+                <div className="space-y-2">
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Items:</span>
+                    <span>{filteredItems.length}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Units:</span>
+                    <span>{filteredItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-primary text-lg pt-2 border-t">
+                    <span>Total Value:</span>
+                    <span>RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+                  </div>
+                </div>
+              </Card>
             </div>
-          </Card>
+
+            {/* Desktop Table View */}
+            <Card className="hidden lg:block overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 font-semibold text-sm">SKU</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Total Value</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sm">Last Updated</th>
+                      <th className="text-center py-3 px-4 font-semibold text-sm">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map((item, index) => (
+                      <tr 
+                        key={item.id} 
+                        className={`border-b border-border hover:bg-muted/30 transition-colors ${
+                          index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                        }`}
+                      >
+                        <td className="py-3 px-4">
+                          <span className="font-mono text-sm font-medium">{item.sku}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-medium">{item.name}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="text-sm text-muted-foreground">
+                            {item.vendor || "—"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 max-w-xs">
+                          <span className="text-sm text-muted-foreground line-clamp-2">
+                            {item.description || "No description"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="font-semibold">RS {item.price.toFixed(2)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
+                            {item.quantity}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="font-semibold text-primary">
+                            RS {(item.price * item.quantity).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-xs text-muted-foreground">
+                            <div>{item.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
+                            <div className="text-[10px]">{item.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-xs text-muted-foreground">
+                            <div>{item.updatedAt?.toDate?.()?.toLocaleDateString() || "N/A"}</div>
+                            <div className="text-[10px]">{item.updatedAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-2 justify-center">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => handleEdit(item)}
+                              className="h-8"
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950 h-8"
+                              onClick={() => handleDelete(item.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/30 border-t-2 border-border">
+                    <tr>
+                      <td colSpan={4} className="py-3 px-4 font-semibold">
+                        Total ({filteredItems.length} items)
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold">
+                        RS {filteredItems.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold">
+                        {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-primary text-lg">
+                        RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
+          </>
         )}
       </main>
     </>
