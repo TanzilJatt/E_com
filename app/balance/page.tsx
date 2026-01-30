@@ -167,17 +167,43 @@ function BalanceContent() {
   const exportToPDF = () => {
     const doc = new jsPDF()
 
+    // Calculate filtered totals
+    const filteredPurchases = filteredEntries
+      .filter(entry => entry.type === "purchase")
+      .reduce((sum, entry) => sum + Math.abs(entry.moneyFlow), 0)
+    
+    const filteredSales = filteredEntries
+      .filter(entry => entry.type === "sale")
+      .reduce((sum, entry) => sum + entry.moneyFlow, 0)
+    
+    const filteredNetFlow = filteredSales - filteredPurchases
+
     // Title
     doc.setFontSize(18)
     doc.text("Balance Sheet Report", 14, 22)
 
-    // Summary
+    // Summary - Overall Totals
     doc.setFontSize(12)
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 32)
-    doc.text(`Total Purchases: RS ${totalPurchases.toFixed(2)}`, 14, 40)
-    doc.text(`Total Sales: RS ${totalSales.toFixed(2)}`, 14, 48)
-    doc.text(`Net Flow: RS ${netFlow.toFixed(2)}`, 14, 56)
-    doc.text(`Inventory Value: RS ${totalInventoryValue.toFixed(2)}`, 14, 64)
+    
+    doc.setFontSize(11)
+    doc.setFont(undefined, 'bold')
+    doc.text("Overall Totals:", 14, 42)
+    doc.setFont(undefined, 'normal')
+    doc.text(`Total Purchases: RS ${totalPurchases.toFixed(2)}`, 20, 50)
+    doc.text(`Total Sales: RS ${totalSales.toFixed(2)}`, 20, 58)
+    doc.text(`Net Flow: RS ${netFlow.toFixed(2)}`, 20, 66)
+    doc.text(`Inventory Value: RS ${totalInventoryValue.toFixed(2)}`, 20, 74)
+
+    // Filtered Totals (if filters are applied)
+    if (filteredEntries.length < balanceEntries.length || searchTerm || startDate || endDate) {
+      doc.setFont(undefined, 'bold')
+      doc.text("Filtered Period Totals:", 14, 86)
+      doc.setFont(undefined, 'normal')
+      doc.text(`Filtered Purchases: RS ${filteredPurchases.toFixed(2)}`, 20, 94)
+      doc.text(`Filtered Sales: RS ${filteredSales.toFixed(2)}`, 20, 102)
+      doc.text(`Filtered Net Flow: RS ${filteredNetFlow.toFixed(2)}`, 20, 110)
+    }
 
     // Table
     const tableData = filteredEntries.map((entry) => [
@@ -190,8 +216,10 @@ function BalanceContent() {
       `RS ${entry.balance.toFixed(2)}`,
     ])
 
+    const startY = (filteredEntries.length < balanceEntries.length || searchTerm || startDate || endDate) ? 118 : 82
+
     autoTable(doc, {
-      startY: 72,
+      startY: startY,
       head: [["Date", "Type", "Item", "SKU", "Qty Change", "Money Flow", "Balance"]],
       body: tableData,
       theme: "grid",
