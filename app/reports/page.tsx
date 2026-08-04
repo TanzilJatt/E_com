@@ -320,7 +320,7 @@ function ReportsContent() {
   </Card>
 
   <Card className="p-6">
-    <div className="text-sm font-medium text-muted-foreground">Total Amount Spent</div>
+    <div className="text-sm font-medium text-muted-foreground">Inventory Cost Value</div>
     <div className="text-xl font-semibold text-orange-600 mt-2">
       RS {totalAmountSpent.toFixed(2)}
     </div>

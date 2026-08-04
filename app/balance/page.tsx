@@ -236,7 +236,30 @@ function BalanceContent() {
     const purchaseTotal = purchasesData.reduce((sum, p) => sum + p.totalAmount, 0)
     const salesTotal = salesData.reduce((sum, s) => sum + s.totalAmount, 0)
     const inventoryValue = itemsData.reduce((sum, i) => sum + ((i.sellingPrice || i.price || 0) * i.quantity), 0)
-    const amountSpent = itemsData.reduce((sum, i) => sum + ((i.actualPrice || i.costPrice || 0) * i.quantity), 0)
+    
+    // Calculate cumulative amount spent from balance entries
+    // Purchases always add to spending (money spent is never reverted)
+    // Item deletions do NOT subtract (keep the amount spent as is)
+    // Item edits only add if cost increases (don't subtract if cost decreases)
+    // Item additions add the cost
+    const amountSpent = entries
+      .filter(entry => entry.type === "purchase" || entry.type === "item_deleted" || entry.type === "item_updated" || entry.type === "item_added")
+      .reduce((sum, entry) => {
+        if (entry.type === "purchase" || entry.type === "item_added") {
+          // Add the cost (moneyFlow is negative, so we take absolute value)
+          return sum + Math.abs(entry.moneyFlow)
+        } else if (entry.type === "item_deleted") {
+          // Do NOT subtract - keep amount spent as is
+          return sum
+        } else if (entry.type === "item_updated") {
+          // Only add if cost increased (moneyFlow is negative), don't subtract if decreased
+          if (entry.moneyFlow < 0) {
+            return sum + Math.abs(entry.moneyFlow)
+          }
+          return sum
+        }
+        return sum
+      }, 0)
 
     setTotalPurchases(purchaseTotal)
     setTotalSales(salesTotal)
@@ -304,7 +327,7 @@ function BalanceContent() {
     // Table
     const tableData = filteredEntries.map((entry) => [
       entry.date.toLocaleDateString(),
-      entry.type.toUpperCase(),
+      entry.type.replace(/_/g, " ").toUpperCase(),
       entry.itemName,
       entry.sku,
       entry.quantityChange > 0 ? `+${entry.quantityChange}` : entry.quantityChange,

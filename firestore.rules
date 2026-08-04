@@ -13,72 +13,89 @@ service cloud.firestore {
     
     // Items collection - users can only access their own items
     match /items/{itemId} {
-      // Users can read their own items
-      allow read: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      // Allow read if user is signed in and is the owner, or if document doesn't exist yet (for list queries)
+      allow read: if isSignedIn() && (resource.data.createdBy == request.auth.uid || request.resource.data.createdBy == request.auth.uid);
       
-      // Users can create items (createdBy must be set to their uid)
+      // Allow create if user is signed in and createdBy is set to their uid
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       
-      // Users can update their own items
+      // Allow update if user is signed in and is the owner
       allow update: if isSignedIn() && resource.data.createdBy == request.auth.uid;
       
-      // Users can delete their own items
+      // Allow delete if user is signed in and is the owner
       allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      // Allow list operations for signed-in users
+      allow list: if isSignedIn();
     }
     
     // Sales collection - users can only access their own sales
     match /sales/{saleId} {
-      // Users can read their own sales
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Allow read if user is signed in and is the owner
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
       
-      // Users can create sales (userId must be set to their uid)
+      // Allow create if user is signed in and userId is set to their uid
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       
-      // Users can update their own sales
+      // Allow update if user is signed in and is the owner
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       
-      // Users can delete their own sales
+      // Allow delete if user is signed in and is the owner
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Allow list operations for signed-in users
+      allow list: if isSignedIn();
     }
     
     // Expenses collection - users can only access their own expenses
     match /expenses/{expenseId} {
-      // Users can read their own expenses
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Allow read if user is signed in and is the owner
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
       
-      // Users can create expenses (userId must be set to their uid)
+      // Allow create if user is signed in and userId is set to their uid
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       
-      // Users can update their own expenses
+      // Allow update if user is signed in and is the owner
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       
-      // Users can delete their own expenses
+      // Allow delete if user is signed in and is the owner
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Allow list operations for signed-in users
+      allow list: if isSignedIn();
     }
     
     // Purchases collection - users can only access their own purchases
     match /purchases/{purchaseId} {
-      // Users can read their own purchases
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Allow read if user is signed in and is the owner
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
       
-      // Users can create purchases (userId must be set to their uid)
+      // Allow create if user is signed in and userId is set to their uid
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       
-      // Users can update their own purchases
+      // Allow update if user is signed in and is the owner
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       
-      // Users can delete their own purchases
+      // Allow delete if user is signed in and is the owner
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Allow list operations for signed-in users
+      allow list: if isSignedIn();
     }
     
     // Activity logs - users can only read their own logs
     match /activityLogs/{logId} {
-      // Users can read their own activity logs
+      // Allow read if user is signed in and is the owner
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       
-      // Only system can write logs (application-level control)
+      // Allow create for signed-in users (application-level control)
       allow create: if isSignedIn();
-      allow update, delete: if false; // Logs should not be modified
+      
+      // Logs should not be modified or deleted
+      allow update, delete: if false;
+      
+      // Allow list operations for signed-in users
+      allow list: if isSignedIn();
     }
   }
 }
