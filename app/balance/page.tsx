@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { getItems, type Item } from "@/lib/items"
 import { getPurchases, type Purchase } from "@/lib/purchases"
 import { getSales, type Sale } from "@/lib/sales"
+import { getActivityLogs, type ActivityLog } from "@/lib/activity-logs"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { useRouter } from "next/navigation"
@@ -17,7 +18,7 @@ import autoTable from "jspdf-autotable"
 
 interface BalanceEntry {
   date: Date
-  type: "purchase" | "sale"
+  type: "purchase" | "sale" | "item_added" | "item_updated" | "item_deleted"
   itemName: string
   sku: string
   quantityChange: number
@@ -32,6 +33,7 @@ function BalanceContent() {
   const [items, setItems] = useState<Item[]>([])
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [sales, setSales] = useState<Sale[]>([])
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
   const [balanceEntries, setBalanceEntries] = useState<BalanceEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
@@ -68,18 +70,20 @@ function BalanceContent() {
       setLoading(true)
       
       // Fetch all data
-      const [itemsData, purchasesData, salesData] = await Promise.all([
+      const [itemsData, purchasesData, salesData, activityLogsData] = await Promise.all([
         getItems(userId || undefined),
         getPurchases(userId || ""),
         getSales(userId || ""),
+        getActivityLogs({ userId: userId || undefined }),
       ])
 
       setItems(itemsData)
       setPurchases(purchasesData)
       setSales(salesData)
+      setActivityLogs(activityLogsData)
 
       // Calculate balance entries
-      calculateBalanceEntries(itemsData, purchasesData, salesData)
+      calculateBalanceEntries(itemsData, purchasesData, salesData, activityLogsData)
     } catch (error) {
       console.error("Error fetching data:", error)
     } finally {
@@ -90,7 +94,8 @@ function BalanceContent() {
   const calculateBalanceEntries = (
     itemsData: Item[],
     purchasesData: Purchase[],
-    salesData: Sale[]
+    salesData: Sale[],
+    activityLogsData: ActivityLog[]
   ) => {
     const entries: BalanceEntry[] = []
     let runningBalance = 0
@@ -133,6 +138,93 @@ function BalanceContent() {
           description: `Sold ${item.quantity} units @ RS ${item.sellingPricePerUnit}`,
         })
       })
+    })
+
+    // Process activity logs for item operations
+    activityLogsData.forEach((log) => {
+      const date = log.timestamp?.toDate?.() || new Date()
+      const item = itemsData.find(i => i.id === log.metadata?.itemId)
+
+      if (log.action === "ITEM_DELETED" && item) {
+        // When item is deleted, record the cost as loss
+        const cost = (item.actualPrice || item.costPrice || 0) * item.quantity
+        const moneyFlow = -cost // Negative because it's a loss
+        runningBalance += moneyFlow
+
+        entries.push({
+          date,
+          type: "item_deleted",
+          itemName: item.name,
+          sku: item.sku,
+          quantityChange: -item.quantity, // Negative (inventory decreases)
+          moneyFlow,
+          balance: runningBalance,
+          description: `Deleted item - Lost ${item.quantity} units worth RS ${cost.toFixed(2)}`,
+        })
+      } else if (log.action === "ITEM_UPDATED" && item && log.metadata?.changes) {
+        // Parse changes to detect cost or quantity changes
+        try {
+          const changes = JSON.parse(log.metadata.changes)
+          const oldCost = item.actualPrice || item.costPrice || 0
+          const newCost = changes.actualPrice || changes.costPrice || oldCost
+          const oldQuantity = item.quantity
+          const newQuantity = changes.quantity !== undefined ? changes.quantity : oldQuantity
+
+          const costDifference = (newCost - oldCost) * newQuantity
+          const quantityDifference = newQuantity - oldQuantity
+
+          if (costDifference !== 0) {
+            const moneyFlow = -costDifference // Negative if cost increased
+            runningBalance += moneyFlow
+
+            entries.push({
+              date,
+              type: "item_updated",
+              itemName: item.name,
+              sku: item.sku,
+              quantityChange: 0,
+              moneyFlow,
+              balance: runningBalance,
+              description: `Updated cost from RS ${oldCost.toFixed(2)} to RS ${newCost.toFixed(2)} for ${newQuantity} units`,
+            })
+          }
+
+          if (quantityDifference !== 0) {
+            const costForQuantityChange = quantityDifference * newCost
+            const moneyFlow = -costForQuantityChange // Negative if quantity increased (cost incurred)
+            runningBalance += moneyFlow
+
+            entries.push({
+              date,
+              type: "item_updated",
+              itemName: item.name,
+              sku: item.sku,
+              quantityChange: quantityDifference,
+              moneyFlow,
+              balance: runningBalance,
+              description: `Updated quantity from ${oldQuantity} to ${newQuantity} (cost: RS ${Math.abs(costForQuantityChange).toFixed(2)})`,
+            })
+          }
+        } catch (e) {
+          console.error("Error parsing changes:", e)
+        }
+      } else if (log.action === "ITEM_ADDED" && item) {
+        // When item is added directly (not through purchase), record the cost
+        const cost = (item.actualPrice || item.costPrice || 0) * item.quantity
+        const moneyFlow = -cost // Negative because money goes out
+        runningBalance += moneyFlow
+
+        entries.push({
+          date,
+          type: "item_added",
+          itemName: item.name,
+          sku: item.sku,
+          quantityChange: item.quantity, // Positive (inventory increases)
+          moneyFlow,
+          balance: runningBalance,
+          description: `Added ${item.quantity} units @ RS ${item.actualPrice || item.costPrice || 0} each`,
+        })
+      }
     })
 
     // Sort by date (newest first)
@@ -379,10 +471,18 @@ function BalanceContent() {
                           className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
                             entry.type === "purchase"
                               ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                              : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                              : entry.type === "sale"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                              : entry.type === "item_added"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                              : entry.type === "item_updated"
+                              ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                              : entry.type === "item_deleted"
+                              ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+                              : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300"
                           }`}
                         >
-                          {entry.type.toUpperCase()}
+                          {entry.type.replace(/_/g, " ").toUpperCase()}
                         </span>
                       </td>
                       <td className="py-3 px-4 font-medium">{entry.itemName}</td>
