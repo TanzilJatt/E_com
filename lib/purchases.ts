@@ -8,12 +8,15 @@ export interface PurchaseItem {
   quantity: number
   unitCost: number
   totalCost: number
+  actualPrice?: number
+  sellingPrice?: number
   pricingType?: "unit" | "bulk"
   bulkPrice?: number
 }
 
 export interface Purchase {
   id: string
+  purchaseNumber?: number
   userId: string
   supplierName: string
   supplierContact?: string
@@ -36,6 +39,47 @@ export interface NewItemPurchase {
 }
 
 /**
+ * Get the next sequential purchase number for a user
+ */
+async function getNextPurchaseNumber(userId: string): Promise<number> {
+  try {
+    const q = query(collection(db, "purchases"), where("userId", "==", userId))
+    const snapshot = await getDocs(q)
+    
+    let maxNumber = 0
+    let needsUpdate = false
+    const purchasesWithoutNumbers: any[] = []
+    
+    snapshot.docs.forEach((doc) => {
+      const data = doc.data() as any
+      if (data.purchaseNumber && typeof data.purchaseNumber === 'number') {
+        maxNumber = Math.max(maxNumber, data.purchaseNumber)
+      } else {
+        needsUpdate = true
+        purchasesWithoutNumbers.push(doc)
+      }
+    })
+    
+    // If there are purchases without purchaseNumber field, assign numbers retroactively
+    if (needsUpdate) {
+      const updates = purchasesWithoutNumbers.map((doc) => {
+        maxNumber++
+        return updateDoc(doc.ref, { purchaseNumber: maxNumber })
+          .catch(err => console.error("Error updating purchase number:", err))
+      })
+      
+      await Promise.all(updates)
+      console.log(`✅ Assigned sequential numbers to ${purchasesWithoutNumbers.length} existing purchases`)
+    }
+    
+    return maxNumber + 1
+  } catch (error) {
+    console.error("Error getting next purchase number:", error)
+    return 1 // Default to 1 if there's an error
+  }
+}
+
+/**
  * Create a new purchase record
  */
 export async function createPurchase(
@@ -49,6 +93,9 @@ export async function createPurchase(
   }
 ): Promise<string> {
   try {
+    // Generate sequential purchase number
+    const purchaseNumber = await getNextPurchaseNumber(userId)
+    
     // First, update inventory quantities for all items
     for (const item of purchaseData.items) {
       const itemRef = doc(db, "items", item.itemId)
@@ -82,6 +129,12 @@ export async function createPurchase(
       }
       
       // Only add optional fields if they're defined
+      if (item.actualPrice !== undefined) {
+        cleanItem.actualPrice = item.actualPrice
+      }
+      if (item.sellingPrice !== undefined) {
+        cleanItem.sellingPrice = item.sellingPrice
+      }
       if (item.pricingType !== undefined) {
         cleanItem.pricingType = item.pricingType
       }
@@ -95,6 +148,7 @@ export async function createPurchase(
     // Create purchase record
     const purchaseRef = await addDoc(collection(db, "purchases"), {
       userId,
+      purchaseNumber,
       supplierName: purchaseData.supplierName,
       supplierContact: purchaseData.supplierContact || "",
       items: cleanedItems,
@@ -124,6 +178,9 @@ export async function createPurchase(
  */
 export async function getPurchases(userId: string): Promise<Purchase[]> {
   try {
+    // First, ensure all purchases have sequential numbers
+    await getNextPurchaseNumber(userId)
+    
     // Try with index first
     const q = query(
       collection(db, "purchases"),
@@ -137,8 +194,10 @@ export async function getPurchases(userId: string): Promise<Purchase[]> {
       ...doc.data(),
     })) as Purchase[]
     
-    // Filter out deleted purchases
-    return purchases.filter((purchase: any) => !purchase.deleted)
+    // Filter out deleted purchases and sort by purchase number descending
+    return purchases
+      .filter((purchase: any) => !purchase.deleted)
+      .sort((a, b) => (b.purchaseNumber || 0) - (a.purchaseNumber || 0))
   } catch (error: any) {
     // If index doesn't exist, fallback to client-side sorting
     if (error?.code === "failed-precondition" || error?.message?.includes("index")) {
@@ -153,14 +212,10 @@ export async function getPurchases(userId: string): Promise<Purchase[]> {
           ...doc.data(),
         })) as Purchase[]
         
-        // Filter out deleted purchases and sort client-side by purchaseDate descending
+        // Filter out deleted purchases and sort client-side by purchase number descending
         return purchases
           .filter((purchase: any) => !purchase.deleted)
-          .sort((a, b) => {
-          const aTime = a.purchaseDate?.toMillis ? a.purchaseDate.toMillis() : 0
-          const bTime = b.purchaseDate?.toMillis ? b.purchaseDate.toMillis() : 0
-          return bTime - aTime
-        })
+          .sort((a, b) => (b.purchaseNumber || 0) - (a.purchaseNumber || 0))
       } catch (fallbackError) {
         console.error("Error in fallback query:", fallbackError)
         throw fallbackError
@@ -270,6 +325,12 @@ export async function updatePurchase(
       }
       
       // Only add optional fields if they're defined
+      if (item.actualPrice !== undefined) {
+        cleanItem.actualPrice = item.actualPrice
+      }
+      if (item.sellingPrice !== undefined) {
+        cleanItem.sellingPrice = item.sellingPrice
+      }
       if (item.pricingType !== undefined) {
         cleanItem.pricingType = item.pricingType
       }

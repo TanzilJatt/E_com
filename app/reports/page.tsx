@@ -26,6 +26,8 @@ import autoTable from "jspdf-autotable"
 function ReportsContent() {
   const [sales, setSales] = useState<any[]>([])
   const [allSales, setAllSales] = useState<any[]>([])
+  const [items, setItems] = useState<any[]>([])
+  const [purchases, setPurchases] = useState<any[]>([])
   const [startDate, setStartDate] = useState(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   )
@@ -35,7 +37,35 @@ function ReportsContent() {
 
   useEffect(() => {
     fetchSales()
+    fetchItems()
+    fetchPurchases()
   }, [])
+
+  const fetchPurchases = async () => {
+    try {
+      const userId = auth?.currentUser?.uid
+      if (!userId) return
+      
+      const { getPurchases } = await import("@/lib/purchases")
+      const purchasesList = await getPurchases(userId)
+      setPurchases(purchasesList)
+    } catch (error) {
+      console.error("Error fetching purchases:", error)
+    }
+  }
+
+  const fetchItems = async () => {
+    try {
+      const userId = auth?.currentUser?.uid
+      if (!userId) return
+      
+      const { getItems } = await import("@/lib/items")
+      const itemsList = await getItems(userId)
+      setItems(itemsList)
+    } catch (error) {
+      console.error("Error fetching items:", error)
+    }
+  }
 
   const fetchSales = async () => {
     try {
@@ -91,6 +121,7 @@ function ReportsContent() {
   const avgTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0
   const boxCount = filteredSales.filter((s) => s.type === "box").length
   const retailCount = filteredSales.filter((s) => s.type === "retail").length
+  const totalAmountSpent = items.reduce((sum, item) => sum + ((item.actualPrice || item.costPrice || 0) * item.quantity), 0)
 
   // Chart data - daily revenue
   const dailyData: { [key: string]: number } = {}
@@ -152,6 +183,7 @@ function ReportsContent() {
     doc.text(`Average Transaction: RS ${avgTransaction.toFixed(2)}`, 14, statsY + 20)
     doc.text(`Retail Sales: ${retailCount} (${((retailCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 26)
     doc.text(`Box Sales: ${boxCount} (${((boxCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 32)
+    doc.text(`Total Amount Spent: RS ${totalAmountSpent.toFixed(2)}`, 14, statsY + 38)
     
     // Add sales table
     doc.setFontSize(12)
@@ -258,26 +290,42 @@ function ReportsContent() {
         </Card>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
-            <div className="text-3xl font-bold text-primary mt-2">RS {totalRevenue.toFixed(2)}</div>
-          </Card>
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Transactions</div>
-            <div className="text-3xl font-bold text-primary mt-2">{totalTransactions}</div>
-          </Card>
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Avg Transaction</div>
-            <div className="text-3xl font-bold text-primary mt-2">RS {avgTransaction.toFixed(2)}</div>
-          </Card>
-          <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Retail / Box Purchase</div>
-            <div className="text-lg font-bold text-primary mt-2">
-              {retailCount} / {boxCount}
-            </div>
-          </Card>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+  <Card className="p-6">
+    <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
+    <div className="text-xl font-semibold text-primary mt-2">
+      RS {totalRevenue.toFixed(2)}
+    </div>
+  </Card>
+
+  <Card className="p-6">
+    <div className="text-sm font-medium text-muted-foreground">Transactions</div>
+    <div className="text-xl font-semibold text-primary mt-2">
+      {totalTransactions}
+    </div>
+  </Card>
+
+  <Card className="p-6">
+    <div className="text-sm font-medium text-muted-foreground">Avg Transaction</div>
+    <div className="text-xl font-semibold text-primary mt-2">
+      RS {avgTransaction.toFixed(2)}
+    </div>
+  </Card>
+
+  <Card className="p-6">
+    <div className="text-sm font-medium text-muted-foreground">Retail / Box Purchase</div>
+    <div className="text-xl font-semibold text-primary mt-2">
+      {retailCount} / {boxCount}
+    </div>
+  </Card>
+
+  <Card className="p-6">
+    <div className="text-sm font-medium text-muted-foreground">Total Amount Spent</div>
+    <div className="text-xl font-semibold text-orange-600 mt-2">
+      RS {totalAmountSpent.toFixed(2)}
+    </div>
+  </Card>
+</div>
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
@@ -285,10 +333,10 @@ function ReportsContent() {
             <h2 className="text-lg font-semibold mb-4">Daily Revenue</h2>
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <LineChart data={chartData} margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                   <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                   <XAxis dataKey="date" stroke="var(--muted-foreground)" />
-                  <YAxis stroke="var(--muted-foreground)" />
+                  <YAxis stroke="var(--muted-foreground)" domain={[0, 'auto']} tickCount={5} allowDecimals={false} />
                   <Tooltip />
                   <Line type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2} />
                 </LineChart>
@@ -301,24 +349,25 @@ function ReportsContent() {
           <Card className="p-6">
             <h2 className="text-lg font-semibold mb-4">Sales Distribution</h2>
             {saleTypeData.some((item) => item.value > 0) ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={saleTypeData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {saleTypeData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="space-y-4">
+                {saleTypeData.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between p-4 rounded-lg bg-muted">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: item.fill }}
+                      />
+                      <span className="font-medium">{item.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-lg">{item.value}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {totalTransactions > 0 ? ((item.value / totalTransactions) * 100).toFixed(1) : 0}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <p className="text-muted-foreground text-center py-8">No sales data</p>
             )}

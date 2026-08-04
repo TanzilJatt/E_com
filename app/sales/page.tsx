@@ -26,7 +26,7 @@ function SalesContent() {
   const [cart, setCart] = useState<SaleItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState("")
   const [quantity, setQuantity] = useState<number | "">("")
-  const [pricePerItem, setPricePerItem] = useState<number | "">("")
+  const [sellingPricePerItem, setPricePerItem] = useState<number | "">("")
   const [cashPrice, setCashPrice] = useState<number | "">("")
   const [creditPrice, setCreditPrice] = useState<number | "">("")
   const [paymentCash, setPaymentCash] = useState(true)
@@ -117,12 +117,18 @@ function SalesContent() {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter((sale) =>
+        sale.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (sale.purchaserName && sale.purchaserName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (sale.description && sale.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
+    
+    // Ensure unique results by ID
+    filtered = filtered.filter((sale, index, self) =>
+      index === self.findIndex((s) => s.id === sale.id)
+    )
 
     // Sale type filter
     if (saleTypeFilter !== "all") {
@@ -164,9 +170,9 @@ function SalesContent() {
       return
     }
 
-    // Validate that price is entered
-    if (pricePerItem === "" || pricePerItem <= 0) {
-      setError("Please enter a valid price per item")
+    // Validate that sellingPrice is entered
+    if (sellingPricePerItem === "" || sellingPricePerItem <= 0) {
+      setError("Please enter a valid sellingPrice per item")
       return
     }
 
@@ -179,19 +185,19 @@ function SalesContent() {
     // Calculate actual quantity and pricing based on sale type
     let qty = typeof quantity === 'number' ? quantity : 0
     let actualQuantity = qty
-    let pricePerUnit = typeof pricePerItem === 'number' ? pricePerItem : 0
+    let sellingPricePerUnit = typeof sellingPricePerItem === 'number' ? sellingPricePerItem : 0
     let totalPrice = 0
     
     if (saleType === "box") {
       // Box purchase: multiply quantity by 12 for inventory deduction
-      // User enters number of boxes and price per item
+      // User enters number of boxes and sellingPrice per item
       actualQuantity = qty * 12
-      pricePerUnit = pricePerItem
-      // Total is actual items × price per item
-      totalPrice = actualQuantity * pricePerUnit
+      sellingPricePerUnit = sellingPricePerItem
+      // Total is actual items × sellingPrice per item
+      totalPrice = actualQuantity * sellingPricePerUnit
     } else {
-      // Retail: quantity and price are straightforward
-      totalPrice = actualQuantity * pricePerUnit
+      // Retail: quantity and sellingPrice are straightforward
+      totalPrice = actualQuantity * sellingPricePerUnit
     }
 
     // Check stock with actual quantity
@@ -199,6 +205,34 @@ function SalesContent() {
       setError(`Not enough stock available. Available: ${item.quantity} items${saleType === "box" ? ` (${Math.floor(item.quantity / 12)} boxes)` : ""}`)
       return
     }
+
+    // ABSOLUTE PRICE VALIDATION: Selling price MUST be equal to or greater than item's regular selling price
+    const itemSellingPrice = item.sellingPrice || item.price || 0
+    console.log(`PRICE VALIDATION: Selling price=${sellingPricePerUnit}, Item selling price=${itemSellingPrice}`)
+    
+    // Validate base price - must be equal to or greater than item's regular selling price
+    if (sellingPricePerUnit < itemSellingPrice) {
+      setError(`🚫 FORBIDDEN: Selling price (RS ${sellingPricePerUnit.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
+      return
+    }
+    
+    // Validate cash price if set
+    if (typeof cashPrice === 'number' && cashPrice > 0) {
+      if (cashPrice < itemSellingPrice) {
+        setError(`🚫 FORBIDDEN: Cash price (RS ${cashPrice.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
+        return
+      }
+    }
+    
+    // Validate credit price if set
+    if (typeof creditPrice === 'number' && creditPrice > 0) {
+      if (creditPrice < itemSellingPrice) {
+        setError(`🚫 FORBIDDEN: Credit price (RS ${creditPrice.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
+        return
+      }
+    }
+    
+    console.log(`VALIDATION PASSED: Selling price ${sellingPricePerUnit} > item selling price ${itemSellingPrice}`)
 
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
@@ -210,13 +244,14 @@ function SalesContent() {
       setError("Item already in cart. Please remove it first to change pricing.")
       return
     } else {
+      console.log(`Adding to cart: itemName=${item.name}, sellingPricePerUnit=${sellingPricePerUnit}, totalPrice=${totalPrice}`)
       setCart([
         ...cart,
         {
           itemId: selectedItemId,
           itemName: item.name,
           quantity: actualQuantity,
-          pricePerUnit: pricePerUnit,
+          sellingPricePerUnit: sellingPricePerUnit,
           cashPrice: undefined,
           creditPrice: undefined,
           totalPrice,
@@ -247,6 +282,28 @@ function SalesContent() {
     if (cart.length === 0) {
       setError("Cart is empty")
       return
+    }
+
+    // FINAL ABSOLUTE VALIDATION: Check all cart items against item's regular selling price
+    for (const cartItem of cart) {
+      const currentItem = items.find(i => i.id === cartItem.itemId)
+      if (currentItem) {
+        const currentItemSellingPrice = currentItem.sellingPrice || currentItem.price || 0
+        console.log(`FINAL VALIDATION: Item ${cartItem.itemName}, Selling price=${cartItem.sellingPricePerUnit}, Item selling price=${currentItemSellingPrice}`)
+        
+        // Check all possible price fields
+        const pricesToCheck = []
+        if (cartItem.cashPrice) pricesToCheck.push({ type: 'Cash', price: cartItem.cashPrice })
+        if (cartItem.creditPrice) pricesToCheck.push({ type: 'Credit', price: cartItem.creditPrice })
+        pricesToCheck.push({ type: 'Base', price: cartItem.sellingPricePerUnit })
+        
+        for (const { type, price } of pricesToCheck) {
+          if (price < currentItemSellingPrice) {
+            setError(`🚫 ABSOLUTE FORBIDDEN: Item "${cartItem.itemName}" ${type} price (RS ${price.toFixed(2)}) is LESS than item selling price (RS ${currentItemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
+            return
+          }
+        }
+      }
     }
 
     const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0)
@@ -407,10 +464,13 @@ function SalesContent() {
         : new Date(sale.transactionDate).toLocaleDateString()
       
       const itemsList = sale.items.map((item) => {
-        const prices = []
-        if (item.cashPrice) prices.push(`Cash: RS ${item.cashPrice.toFixed(2)}`)
-        if (item.creditPrice) prices.push(`Credit: RS ${item.creditPrice.toFixed(2)}`)
-        return `${item.itemName} (x${item.quantity}) - ${prices.join(", ")}`
+        const sellingPrices = []
+        if (item.cashPrice) sellingPrices.push(`Cash: RS ${(item.cashPrice || 0).toFixed(2)}`)
+        if (item.creditPrice) sellingPrices.push(`Credit: RS ${(item.creditPrice || 0).toFixed(2)}`)
+        const unitPrice = item.sellingPricePerUnit || 0
+        const totalPrice = unitPrice * item.quantity
+        const priceInfo = sellingPrices.length > 0 ? ` - ${sellingPrices.join(", ")}` : ""
+        return `${item.itemName} (x${item.quantity} @ RS ${unitPrice.toFixed(2)} each = RS ${totalPrice.toFixed(2)})${priceInfo}`
       }).join("\n")
       
       let paymentInfo = ""
@@ -432,7 +492,7 @@ function SalesContent() {
         sale.description || "-",
         itemsList,
         paymentInfo,
-        `RS ${sale.totalAmount.toFixed(2)}`
+        `RS ${(sale.totalAmount || 0).toFixed(2)}`
       ]
     })
     
@@ -461,7 +521,7 @@ function SalesContent() {
     doc.setFontSize(12)
     doc.text(`Total Sales: ${filteredSales.length}`, 14, finalY + 10)
     const totalAmount = filteredSales.reduce((sum, sale) => sum + sale.totalAmount, 0)
-    doc.text(`Grand Total: RS ${totalAmount.toFixed(2)}`, 14, finalY + 18)
+    doc.text(`Grand Total: RS ${(totalAmount || 0).toFixed(2)}`, 14, finalY + 18)
     
     // Save PDF
     const fileName = `sales-report-${new Date().toISOString().split("T")[0]}.pdf`
@@ -561,7 +621,7 @@ function SalesContent() {
           {saleType === "box" && (
             <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
               <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
-                ℹ️ <strong>Box Purchase:</strong> Enter the number of boxes and price per item. Each box contains 12 items. The system will automatically deduct the correct quantity from inventory (e.g., 5 boxes = 60 items deducted).
+                ℹ️ <strong>Box Purchase:</strong> Enter the number of boxes and sellingPrice per item. Each box contains 12 items. The system will automatically deduct the correct quantity from inventory (e.g., 5 boxes = 60 items deducted).
               </p>
             </div>
           )}
@@ -624,7 +684,7 @@ function SalesContent() {
                     <option value="">Choose an item...</option>
                     {items.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} - RS {item.price} ({item.quantity} available)
+                        {item.name} - Selling Price: RS {(item.sellingPrice || item.price || 0).toFixed(2)} - Available: {item.quantity}
                       </option>
                     ))}
                   </select>
@@ -662,14 +722,14 @@ function SalesContent() {
                       type="number"
                       min="0"
                       step="0.01"
-                    placeholder="Enter price per item"
-                    value={pricePerItem === "" ? "" : pricePerItem}
+                    placeholder="Enter sellingPrice per item"
+                    value={sellingPricePerItem === "" ? "" : sellingPricePerItem}
                     onChange={(e) => setPricePerItem(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     className="font-semibold"
                     />
-                    {saleType === "box" && pricePerItem && quantity && (
+                    {saleType === "box" && sellingPricePerItem && quantity && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                        💰 Total: RS {(pricePerItem * quantity * 12).toFixed(2)} ({quantity * 12} items × RS {pricePerItem})
+                        💰 Total: RS {((sellingPricePerItem || 0) * quantity * 12).toFixed(2)} ({quantity * 12} items × RS {sellingPricePerItem || 0})
                       </p>
                     )}
                   </div>
@@ -679,14 +739,14 @@ function SalesContent() {
                   <div className="w-full border-2 border-primary/30 bg-primary/5 rounded-lg p-3">
                     <p className="text-2xl font-bold text-primary">
                       RS {
-                        (pricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof pricePerItem === 'number')
-                          ? (pricePerItem * quantity).toFixed(2)
+                        (sellingPricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof sellingPricePerItem === 'number')
+                          ? (sellingPricePerItem * quantity).toFixed(2)
                           : "0.00"
                       }
                     </p>
-                    {pricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof pricePerItem === 'number' && (
+                    {sellingPricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof sellingPricePerItem === 'number' && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        RS {pricePerItem.toFixed(2)} × {quantity} units
+                        RS {(sellingPricePerItem || 0).toFixed(2)} × {quantity} units
                       </p>
                     )}
                   </div>
@@ -716,11 +776,14 @@ function SalesContent() {
                           </span>
                           <span className="text-muted-foreground">×</span>
                           <span className="text-muted-foreground">
-                            Price: <span className="font-semibold text-foreground">RS {item.pricePerUnit.toFixed(2)}</span>
+                            Unit Price: <span className="font-semibold text-foreground">RS {(() => {
+                              const unitPrice = item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
+                              return unitPrice.toFixed(2)
+                            })()}</span>
                           </span>
                           <span className="text-muted-foreground">=</span>
                           <span className="text-primary font-bold">
-                            RS {item.totalPrice.toFixed(2)}
+                            RS {(item.totalPrice || 0).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -755,7 +818,7 @@ function SalesContent() {
                 <div className="border-t-2 border-primary/30 pt-3 mt-3">
                   <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
                   <span className="font-semibold">Grand Total:</span>
-                    <span className="text-3xl font-bold text-primary">RS {grandTotal.toFixed(2)}</span>
+                    <span className="text-3xl font-bold text-primary">RS {(grandTotal || 0).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -807,7 +870,7 @@ function SalesContent() {
                         />
                         {cashAmount !== "" && typeof cashAmount === 'number' && (
                           <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                            Cash: RS {cashAmount.toFixed(2)}
+                            Cash: RS {(cashAmount || 0).toFixed(2)}
                           </p>
                         )}
                       </div>
@@ -856,7 +919,7 @@ function SalesContent() {
                         />
                         {creditAmount !== "" && typeof creditAmount === 'number' && (
                           <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                            Credit: RS {creditAmount.toFixed(2)}
+                            Credit: RS {(creditAmount || 0).toFixed(2)}
                           </p>
                         )}
                       </div>
@@ -876,7 +939,7 @@ function SalesContent() {
                       💡 Split Payment:
                     </p>
                     <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                      Cash: RS {typeof cashAmount === 'number' ? cashAmount.toFixed(2) : '0.00'} + Credit: RS {typeof creditAmount === 'number' ? creditAmount.toFixed(2) : '0.00'} = RS {grandTotal.toFixed(2)}
+                      Cash: RS {typeof cashAmount === 'number' ? cashAmount.toFixed(2) : '0.00'} + Credit: RS {typeof creditAmount === 'number' ? creditAmount.toFixed(2) : '0.00'} = RS {(grandTotal || 0).toFixed(2)}
                     </p>
                   </div>
                 )}
@@ -999,14 +1062,14 @@ function SalesContent() {
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold text-primary">
-                            RS {sale.totalAmount.toFixed(2)}
+                            RS {(sale.totalAmount || 0).toFixed(2)}
                           </div>
                           <div className="text-sm">
                             {sale.paymentMethod ? (
                               sale.paymentMethod.cash && sale.paymentMethod.credit ? (
                                 <div className="space-y-1">
                                   <div className="text-green-600 dark:text-green-400">
-                                    Cash: RS {(sale.paymentMethod.cashAmount || 0).toFixed(2)}
+                                    Cash: RS {((sale.paymentMethod.cashAmount || 0) || 0).toFixed(2)}
                                   </div>
                                   <div className="text-blue-600 dark:text-blue-400">
                                     Credit: RS {(sale.paymentMethod.creditAmount || 0).toFixed(2)}
@@ -1029,25 +1092,35 @@ function SalesContent() {
                         <div className="text-sm font-medium mb-2">Items:</div>
                         <div className="space-y-1">
                           {sale.items.map((item, idx) => (
-                            <div key={idx} className="text-sm text-muted-foreground flex justify-between">
-                              <span>
-                                {item.itemName} × {item.quantity}
-                              </span>
-                              <span className="flex gap-2">
-                                {item.cashPrice !== undefined && (
-                                  <span className="text-green-600 dark:text-green-400">
-                                    Cash: RS {item.cashPrice.toFixed(2)}
-                                  </span>
-                                )}
-                                {item.creditPrice !== undefined && (
-                                  <span className="text-blue-600 dark:text-blue-400">
-                                    Credit: RS {item.creditPrice.toFixed(2)}
-                                  </span>
-                                )}
-                                {item.cashPrice === undefined && item.creditPrice === undefined && (
-                                  <span>RS {item.pricePerUnit.toFixed(2)}</span>
-                                )}
-                              </span>
+                            <div key={idx} className="text-sm text-muted-foreground">
+                              <div className="flex justify-between">
+                                <span>
+                                  {item.itemName} × {item.quantity}
+                                </span>
+                                <span className="font-semibold text-foreground">
+                                  RS {(item.totalPrice || 0).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  @ RS {(() => {
+                                    const unitPrice = item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
+                                    return unitPrice.toFixed(2)
+                                  })()} each
+                                </span>
+                                <span className="flex gap-2">
+                                  {item.cashPrice !== undefined && (
+                                    <span className="text-green-600 dark:text-green-400">
+                                      Cash: RS {(item.cashPrice || 0).toFixed(2)}
+                                    </span>
+                                  )}
+                                  {item.creditPrice !== undefined && (
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      Credit: RS {(item.creditPrice || 0).toFixed(2)}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>

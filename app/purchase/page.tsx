@@ -21,9 +21,10 @@ type PricingType = "unit" | "bulk"
 interface CartItem extends PurchaseItem {
   pricingType?: PricingType
   bulkPrice?: number
+  sellingPrice?: number // Selling price from purchase page
   isNewItem?: boolean // Flag to indicate if this is a new item not yet in inventory
   newItemData?: {
-    price: number
+    sellingPrice: number
     description: string
     vendor: string
   }
@@ -33,6 +34,7 @@ interface NewItemForm {
   itemName: string
   quantity: string
   unitCost: string
+  sellingPrice: string
   bulkPrice: string
   description: string
   vendor: string
@@ -64,7 +66,9 @@ function PurchaseContent() {
   const [selectedItem, setSelectedItem] = useState<string>("")
   const [quantity, setQuantity] = useState("")
   const [unitCost, setUnitCost] = useState("")
+  const [unitSellingPrice, setUnitSellingPrice] = useState("")
   const [bulkPrice, setBulkPrice] = useState("")
+  const [bulkSellingPrice, setBulkSellingPrice] = useState("")
   const [existingItemPricingType, setExistingItemPricingType] = useState<PricingType>("unit")
 
   // New item form
@@ -72,6 +76,7 @@ function PurchaseContent() {
     itemName: "",
     quantity: "",
     unitCost: "",
+    sellingPrice: "",
     bulkPrice: "",
     description: "",
     vendor: "",
@@ -125,6 +130,13 @@ function PurchaseContent() {
       const fetchedPurchases = await getPurchases(userId)
       setPurchases(fetchedPurchases)
       setFilteredPurchases(fetchedPurchases)
+      
+      // Force a refresh to ensure sequential numbers are assigned
+      setTimeout(async () => {
+        const updatedData = await getPurchases(userId)
+        setPurchases(updatedData)
+        setFilteredPurchases(updatedData)
+      }, 500)
     } catch (err) {
       console.error("Error fetching purchases:", err)
     }
@@ -137,10 +149,17 @@ function PurchaseContent() {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter((purchase) =>
+        purchase.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (purchase.purchaseNumber && purchase.purchaseNumber.toString().includes(searchTerm)) ||
         (purchase.notes && purchase.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
         purchase.items.some(item => item.itemName.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
+    
+    // Ensure unique results by ID
+    filtered = filtered.filter((purchase, index, self) =>
+      index === self.findIndex((p) => p.id === purchase.id)
+    )
 
     // Pricing type filter
     if (pricingTypeFilter !== "all") {
@@ -154,7 +173,7 @@ function PurchaseContent() {
       filtered = filtered.filter((purchase) => {
         const purchaseDate = purchase.purchaseDate?.toDate
           ? purchase.purchaseDate.toDate()
-          : new Date(purchase.purchaseDate)
+          : new Date()
         return purchaseDate >= dateFilter.start! && purchaseDate <= dateFilter.end!
       })
     }
@@ -162,8 +181,8 @@ function PurchaseContent() {
     setFilteredPurchases(filtered)
   }, [purchases, searchTerm, pricingTypeFilter, dateFilter])
 
-  const handleDateFilter = (preset: DatePreset | null, start: Date | null, end: Date | null) => {
-    setDateFilter({ start, end })
+  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDate, end: endDate })
   }
 
   const handleAddExistingItem = () => {
@@ -172,13 +191,13 @@ function PurchaseContent() {
       return
     }
 
-    if (existingItemPricingType === "unit" && !unitCost) {
-      setError("Please enter unit cost")
+    if (existingItemPricingType === "unit" && (!unitCost || !unitSellingPrice)) {
+      setError("Please enter unit cost and selling price")
       return
     }
 
-    if (existingItemPricingType === "bulk" && !bulkPrice) {
-      setError("Please enter box price (12 items)")
+    if (existingItemPricingType === "bulk" && (!bulkPrice || !bulkSellingPrice)) {
+      setError("Please enter box cost and box selling price")
       return
     }
 
@@ -194,29 +213,37 @@ function PurchaseContent() {
       let qty = parseInt(quantity)
       let cost: number
       let totalCost: number
+      let sellingPrice: number
 
       if (existingItemPricingType === "unit") {
         cost = parseFloat(unitCost)
+        sellingPrice = parseFloat(unitSellingPrice)
         totalCost = qty * cost
       } else {
         // Bulk pricing - multiply quantity by 12
         const bulk = parseFloat(bulkPrice)
-        const actualQuantity = qty * 12 // Multiply by 12 for bulk
+        const bulkSell = parseFloat(bulkSellingPrice)
+        const costQuantity = qty * 12 // Multiply by 12 for bulk
         cost = bulk / 12 // Calculate per unit cost
+        sellingPrice = bulkSell / 12
         totalCost = qty * bulk // Total cost = number of bulk units * bulk price
-        qty = actualQuantity // Update qty to actual quantity
+        qty = costQuantity // Update qty to cost quantity
       }
 
-      // Check if purchase cost is different from item's inventory selling price
-      const isDifferentFromInventoryPrice = cost !== item.price
-      
+      // Validate calculations to prevent NaN
+      if (isNaN(cost) || isNaN(totalCost) || isNaN(sellingPrice)) {
+        setError("Invalid cost calculation. Please check your inputs.")
+        setIsAddingToCart(false)
+        return
+      }
+
       // Check if item already exists in cart with same cost
       const existingCartItem = cart.find(
         (cartItem) => cartItem.itemId === item.id && cartItem.unitCost === cost
       )
 
-      if (existingCartItem && !isDifferentFromInventoryPrice) {
-        // Same item with same cost as inventory and already in cart - update quantity
+      if (existingCartItem) {
+        // Same item with same cost - update quantity
         const updatedCart = cart.map((cartItem) => {
           if (cartItem.itemId === item.id && cartItem.unitCost === cost) {
             const newQuantity = cartItem.quantity + qty
@@ -235,96 +262,46 @@ function PurchaseContent() {
           setSelectedItem("")
           setQuantity("")
           setUnitCost("")
+          setUnitSellingPrice("")
           setBulkPrice("")
+          setBulkSellingPrice("")
           setError("")
           setSuccess(`Quantity updated! Added ${qty} more units to existing item.`)
           setIsAddingToCart(false)
           setTimeout(() => setSuccess(""), 3000)
         }, 300)
       } else {
-        // Need to check if we should add suffix
-        let itemName = item.name
-        let itemSku = item.sku
-        let shouldAddSuffix = false
+        // Add new item to cart with the selling price from purchase page
+        setCart([
+          ...cart,
+          {
+            itemId: item.id,
+            itemName: item.name,
+            sku: item.sku,
+            quantity: qty,
+            unitCost: cost,
+            totalCost: totalCost,
+            pricingType: existingItemPricingType,
+            bulkPrice: existingItemPricingType === "bulk" ? parseFloat(bulkPrice) : undefined,
+            sellingPrice: sellingPrice, // Store the selling price from purchase page
+          },
+        ])
 
-        // Case 1: Purchase cost is different from inventory price
-        if (isDifferentFromInventoryPrice) {
-          shouldAddSuffix = true
-        }
-        // Case 2: Item with same ID exists in cart (any cost)
-        else if (cart.some((cartItem) => cartItem.itemId === item.id)) {
-          shouldAddSuffix = true
-        }
-
-        if (shouldAddSuffix) {
-          // Add suffix to name
-          let suffix = 1
-          let newName = `${item.name}_${suffix}`
-          let newSku = `${item.sku}_${suffix}`
-
-          // Keep incrementing suffix until we find an unused name
-          while (
-            cart.some(
-              (cartItem) =>
-                cartItem.itemName.toLowerCase() === newName.toLowerCase()
-            ) &&
-            suffix < 100
-          ) {
-            suffix++
-            newName = `${item.name}_${suffix}`
-            newSku = `${item.sku}_${suffix}`
-          }
-
-          if (suffix >= 100) {
-            setError(`Too many variants of "${item.name}" in cart`)
-            setIsAddingToCart(false)
-            return
-          }
-
-          if (newName.length > 30) {
-            setError(`Generated name "${newName}" exceeds 30 characters`)
-            setIsAddingToCart(false)
-            return
-          }
-
-          itemName = newName
-          itemSku = newSku
-          
-          if (isDifferentFromInventoryPrice) {
-            setSuccess(`Item added as "${newName}" - Purchase cost (RS ${cost}) differs from inventory price (RS ${item.price}).`)
-          } else {
-            setSuccess(`Item added as "${newName}" due to different cost.`)
-          }
-          setTimeout(() => setSuccess(""), 5000)
-        }
-
-        const cartItem: CartItem = {
-          itemId: item.id,
-          itemName: itemName,
-          sku: itemSku,
-          quantity: qty,
-          unitCost: cost,
-          totalCost: totalCost,
-          pricingType: existingItemPricingType,
-        }
-
-        // Only add bulkPrice if it's defined
-        if (existingItemPricingType === "bulk" && bulkPrice) {
-          cartItem.bulkPrice = parseFloat(bulkPrice)
-        }
-
-        // Small delay to show loading state
         setTimeout(() => {
-          setCart([...cart, cartItem])
           setSelectedItem("")
           setQuantity("")
           setUnitCost("")
+          setUnitSellingPrice("")
           setBulkPrice("")
+          setBulkSellingPrice("")
           setError("")
+          setSuccess(`Item added to cart!`)
           setIsAddingToCart(false)
+          setTimeout(() => setSuccess(""), 3000)
         }, 300)
       }
-    } catch (err) {
+    } catch (error) {
+      console.error("Error adding item to cart:", error)
       setError("Failed to add item to cart")
       setIsAddingToCart(false)
     }
@@ -343,41 +320,53 @@ function PurchaseContent() {
     }
 
     if (newItem.pricingType === "unit" && (!newItem.unitCost || unitCostValue <= 0)) {
-      setError("Please enter unit cost")
-      return
-    }
+        setError("Please enter unit cost")
+        return
+      }
 
-    if (newItem.pricingType === "bulk" && (!newItem.bulkPrice || bulkPriceValue <= 0)) {
-      setError("Please enter box price (12 items)")
-      return
-    }
+      if (newItem.pricingType === "unit" && (!newItem.sellingPrice || parseFloat(newItem.sellingPrice) <= 0)) {
+        setError("Please enter unit selling price")
+        return
+      }
+
+      if (newItem.pricingType === "bulk" && (!newItem.bulkPrice || bulkPriceValue <= 0)) {
+        setError("Please enter box cost (12 items)")
+        return
+      }
+
+      if (newItem.pricingType === "bulk" && (!newItem.sellingPrice || parseFloat(newItem.sellingPrice) <= 0)) {
+        setError("Please enter box selling price")
+        return
+      }
 
     setIsAddingToCart(true)
 
     try {
-      // Calculate cost based on pricing type for the selling price
-      let sellingPrice: number
-      if (newItem.pricingType === "unit") {
-        sellingPrice = unitCostValue // 20% markup as default
-      } else {
-        sellingPrice = (bulkPriceValue / 12) // 20% markup on per-unit cost
-      }
-
       // Calculate cost based on pricing type
       let cost: number
       let totalCost: number
       let finalQuantity: number
+      let itemSellingPrice: number
 
       if (newItem.pricingType === "unit") {
         cost = unitCostValue
+        itemSellingPrice = parseFloat(newItem.sellingPrice)
         totalCost = qty * cost
         finalQuantity = qty
       } else {
         // Bulk pricing - multiply quantity by 12
-        const actualQuantity = qty * 12 // Multiply by 12 for bulk
+        const costQuantity = qty * 12 // Multiply by 12 for bulk
         cost = bulkPriceValue / 12 // Calculate per unit cost
+        itemSellingPrice = parseFloat(newItem.sellingPrice) / 12
         totalCost = qty * bulkPriceValue // Total cost = number of bulk units * bulk price
-        finalQuantity = actualQuantity
+        finalQuantity = costQuantity
+      }
+
+      // Validate calculations to prevent NaN
+      if (isNaN(cost) || isNaN(totalCost) || isNaN(itemSellingPrice)) {
+        setError("Invalid cost calculation. Please check your inputs.")
+        setIsAddingToCart(false)
+        return
       }
 
       // Check if item with same name and cost already exists in cart
@@ -425,63 +414,20 @@ function PurchaseContent() {
         return
       }
 
-      // Check if item with same name but different cost exists
-      const existingItemWithDifferentCost = cart.find(
-        (cartItem) => 
-          cartItem.itemName.toLowerCase() === newItem.itemName.trim().toLowerCase() && 
-          cartItem.unitCost !== cost
-      )
-
-      let itemName = newItem.itemName.trim()
-      let itemSku = "Will be auto-generated"
-
-      if (existingItemWithDifferentCost) {
-        // Same name but different cost - add suffix to name
-        let suffix = 1
-        let newName = `${newItem.itemName.trim()}_${suffix}`
-
-        // Keep incrementing suffix until we find an unused name
-        while (
-          cart.some(
-            (cartItem) =>
-              cartItem.itemName.toLowerCase() === newName.toLowerCase()
-          ) &&
-          suffix < 100
-        ) {
-          suffix++
-          newName = `${newItem.itemName.trim()}_${suffix}`
-        }
-
-        if (suffix >= 100) {
-          setError(`Too many variants of "${newItem.itemName}" in cart`)
-          setIsAddingToCart(false)
-          return
-        }
-
-        if (newName.length > 30) {
-          setError(`Generated name "${newName}" exceeds 30 characters`)
-          setIsAddingToCart(false)
-          return
-        }
-
-        itemName = newName
-        setSuccess(`Item added as "${newName}" due to different cost.`)
-        setTimeout(() => setSuccess(""), 5000)
-      }
-
       // Add to cart WITHOUT creating in inventory yet
       // Item will be created when "Complete Purchase" is clicked
       const cartItem: CartItem = {
         itemId: `temp-${Date.now()}`, // Temporary ID
-        itemName: itemName,
-        sku: itemSku,
+        itemName: newItem.itemName.trim(),
+        sku: "Will be auto-generated",
         quantity: finalQuantity,
-        unitCost: cost,
+        unitCost: cost, // Store the actual cost
         totalCost: totalCost,
         pricingType: newItem.pricingType,
+        sellingPrice: itemSellingPrice, // Store the selling price from purchase page
         isNewItem: true, // Flag to indicate this is a new item
         newItemData: {
-          price: sellingPrice,
+          sellingPrice: itemSellingPrice,
           description: newItem.description,
           vendor: newItem.vendor,
         }
@@ -551,7 +497,8 @@ function PurchaseContent() {
             const itemId = await addItem(
               {
                 name: item.itemName,
-                price: item.newItemData.price,
+                sellingPrice: item.newItemData.sellingPrice,
+                actualPrice: item.unitCost, // Set actual cost from purchase
                 quantity: 0, // Initial quantity is 0, will be updated after purchase
                 description: item.newItemData.description,
                 vendor: item.newItemData.vendor,
@@ -571,49 +518,19 @@ function PurchaseContent() {
               itemId: itemId,
             }
           } else {
-            // Check if item has a suffix (e.g., "Laptop_1", "Mouse_2")
-            const hasSuffix = /_\d+$/.test(item.itemName)
+            // Update existing item's selling price and actual cost from purchase
+            const newSellingPrice = item.sellingPrice ?? item.unitCost + 1
+            await updateItem(
+              item.itemId,
+              {
+                sellingPrice: newSellingPrice,
+                actualPrice: item.unitCost,
+              },
+              userId
+            )
             
-            if (hasSuffix) {
-              // This is a variant with different cost - create as new item in inventory
-              // Find the original item to get vendor info
-              const originalItem = items.find(i => i.id === item.itemId)
-              
-              const newItemId = await addItem(
-                {
-                  name: item.itemName,
-                  price: item.unitCost, // Use purchase cost as selling price for variant
-                  quantity: 0, // Will be updated after purchase
-                  description: originalItem?.description || `Variant of ${originalItem?.name || item.itemName}`,
-                  vendor: originalItem?.vendor || "",
-                },
-                userId,
-                userName
-              )
-
-              if (!newItemId) {
-                throw new Error(`Failed to create variant item: ${item.itemName}`)
-              }
-
-              // Return with new itemId
-              return {
-                ...item,
-                itemId: newItemId,
-              }
-            } else {
-              // No suffix - this is the original item, just update its price if needed
-              const newSellingPrice = item.unitCost
-              await updateItem(
-                item.itemId,
-                {
-                  price: newSellingPrice,
-                },
-                userId
-              )
-              
-              // Return existing item as-is
-              return item
-            }
+            // Return existing item as-is
+            return item
           }
         })
       )
@@ -681,7 +598,8 @@ function PurchaseContent() {
             const itemId = await addItem(
               {
                 name: item.itemName,
-                price: item.newItemData.price,
+                sellingPrice: item.newItemData.sellingPrice,
+                actualPrice: item.unitCost, // Set actual cost from purchase
                 quantity: 0, // Initial quantity is 0, will be updated after purchase
                 description: item.newItemData.description,
                 vendor: item.newItemData.vendor,
@@ -701,49 +619,19 @@ function PurchaseContent() {
               itemId: itemId,
             }
           } else {
-            // Check if item has a suffix (e.g., "Laptop_1", "Mouse_2")
-            const hasSuffix = /_\d+$/.test(item.itemName)
+            // Update existing item's selling price and actual cost from purchase
+            const newSellingPrice = item.sellingPrice ?? item.unitCost + 1
+            await updateItem(
+              item.itemId,
+              {
+                sellingPrice: newSellingPrice,
+                actualPrice: item.unitCost,
+              },
+              userId
+            )
             
-            if (hasSuffix) {
-              // This is a variant with different cost - create as new item in inventory
-              // Find the original item to get vendor info
-              const originalItem = items.find(i => i.id === item.itemId)
-              
-              const newItemId = await addItem(
-                {
-                  name: item.itemName,
-                  price: item.unitCost, // Use purchase cost as selling price for variant
-                  quantity: 0, // Will be updated after purchase
-                  description: originalItem?.description || `Variant of ${originalItem?.name || item.itemName}`,
-                  vendor: originalItem?.vendor || "",
-                },
-                userId,
-                userName
-              )
-
-              if (!newItemId) {
-                throw new Error(`Failed to create variant item: ${item.itemName}`)
-              }
-
-              // Return with new itemId
-              return {
-                ...item,
-                itemId: newItemId,
-              }
-            } else {
-              // No suffix - this is the original item, just update its price if needed
-              const newSellingPrice = item.unitCost
-              await updateItem(
-                item.itemId,
-                {
-                  price: newSellingPrice,
-                },
-                userId
-              )
-              
-              // Return existing item as-is
-              return item
-            }
+            // Return existing item as-is
+            return item
           }
         })
       )
@@ -839,11 +727,11 @@ function PurchaseContent() {
         : new Date()
       
       const itemsList = purchase.items.map((item) =>
-        `${item.itemName} (${item.sku}) x${item.quantity} @ RS ${item.unitCost.toFixed(2)}`
+        `${item.itemName} (${item.sku}) x${item.quantity} @ Actual RS ${item.actualPrice?.toFixed(2) ?? item.unitCost.toFixed(2)}, Sell RS ${item.sellingPrice?.toFixed(2) ?? "0.00"}`
       ).join("\n")
       
       return [
-        `#${purchase.id?.slice(0, 8) || "N/A"}`,
+        `#${purchase.purchaseNumber || "Loading..."}`,
         purchaseDate.toLocaleDateString(),
         itemsList,
         `RS ${purchase.totalAmount.toFixed(2)}`
@@ -853,7 +741,7 @@ function PurchaseContent() {
     // Add table
     autoTable(doc, {
       startY: filterInfo.length > 0 ? 42 : 36,
-      head: [["ID", "Date", "Items", "Total"]],
+      head: [["#", "Date", "Items", "Total"]],
       body: tableData,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 2 },
@@ -1064,15 +952,29 @@ function PurchaseContent() {
                         placeholder={unitCost ? "" : "0.00"}
                         disabled={isSubmitting}
                       />
-                      {quantity && unitCost && (
+                      <label className="block text-sm font-medium mb-2 mt-3">Unit Selling Price (RS)</label>
+                      <Input
+                        type="text"
+                        value={unitSellingPrice}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setUnitSellingPrice(value)
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        placeholder={unitSellingPrice ? "" : "0.00"}
+                        disabled={isSubmitting}
+                      />
+                      {quantity && unitCost && unitSellingPrice && (
                         <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
-                          💰 Total: RS {(parseInt(quantity) * parseFloat(unitCost)).toFixed(2)}
+                          💰 Cost: RS {(parseInt(quantity) * parseFloat(unitCost)).toFixed(2)} • Sell: RS {(parseInt(quantity) * parseFloat(unitSellingPrice)).toFixed(2)}
                         </p>
                       )}
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-sm font-medium mb-2">Box Price (12 items) (RS)</label>
+                      <label className="block text-sm font-medium mb-2">Box Cost (12 items) (RS)</label>
                       <Input
                         type="text"
                         value={bulkPrice}
@@ -1087,9 +989,23 @@ function PurchaseContent() {
                         placeholder={bulkPrice ? "" : "0.00"}
                         disabled={isSubmitting}
                       />
-                      {quantity && bulkPrice && (
+                      <label className="block text-sm font-medium mb-2 mt-3">Box Selling Price (12 items) (RS)</label>
+                      <Input
+                        type="text"
+                        value={bulkSellingPrice}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setBulkSellingPrice(value)
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        placeholder={bulkSellingPrice ? "" : "0.00"}
+                        disabled={isSubmitting}
+                      />
+                      {quantity && bulkPrice && bulkSellingPrice && (
                         <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
-                          💰 Total: RS {(parseInt(quantity) * parseFloat(bulkPrice)).toFixed(2)}
+                          💰 Cost: RS {(parseInt(quantity) * parseFloat(bulkPrice)).toFixed(2)} • Sell: RS {(parseInt(quantity) * parseFloat(bulkSellingPrice)).toFixed(2)}
                         </p>
                       )}
                     </div>
@@ -1102,8 +1018,8 @@ function PurchaseContent() {
                     <strong>🔄 Smart Duplicate Handling:</strong>
                   </p>
                   <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 ml-4 list-disc">
-                    <li><strong>Same cost as inventory price:</strong> Quantity added to existing entry (if any)</li>
-                    <li><strong>Different cost from inventory price:</strong> New entry created as "name_1", "name_2", etc.</li>
+                    <li><strong>Same cost as inventory sellingPrice:</strong> Quantity added to existing entry (if any)</li>
+                    <li><strong>Different cost from inventory sellingPrice:</strong> New entry created as "name_1", "name_2", etc.</li>
                     <li><strong>Note:</strong> Purchase cost is compared with item's inventory selling price</li>
                   </ul>
                 </div>
@@ -1154,7 +1070,7 @@ function PurchaseContent() {
                   <div>
                     <label className="block text-sm font-medium mb-2">Item Name <span className="text-red-500">*</span></label>
                     <Input
-                      value={newItem.itemName}
+                      value={newItem.itemName || ""}
                       onChange={(e) => {
                         const value = e.target.value
                         // Only allow letters, numbers, and spaces, max 30 characters
@@ -1162,7 +1078,7 @@ function PurchaseContent() {
                           setNewItem({ ...newItem, itemName: value })
                         }
                       }}
-                      placeholder={newItem.itemName ? "" : "Enter item name"}
+                      placeholder="Enter item name"
                       disabled={isSubmitting}
                     />
                     {/* <p className="text-xs text-muted-foreground mt-1">
@@ -1177,7 +1093,7 @@ function PurchaseContent() {
                       </label>
                       <Input
                         type="text"
-                        value={newItem.quantity}
+                        value={newItem.quantity || ""}
                         onChange={(e) => {
                           const value = e.target.value
                           // Only allow numbers and decimal point
@@ -1186,7 +1102,7 @@ function PurchaseContent() {
                           }
                         }}
                         onFocus={(e) => e.target.select()}
-                        placeholder={newItem.quantity ? "" : "0.00"}
+                        placeholder="0.00"
                         disabled={isSubmitting}
                       />
                       {newItem.pricingType === "bulk" && (
@@ -1200,7 +1116,7 @@ function PurchaseContent() {
                         <label className="block text-sm font-medium mb-2">Unit Cost (RS) <span className="text-red-500">*</span></label>  
                         <Input
                           type="text"
-                          value={newItem.unitCost}
+                          value={newItem.unitCost || ""}
                           onChange={(e) => {
                             const value = e.target.value
                             // Only allow numbers and decimal point
@@ -1209,18 +1125,32 @@ function PurchaseContent() {
                             }
                           }}
                           onFocus={(e) => e.target.select()}
-                          placeholder={newItem.unitCost ? "" : "0.00"}
+                          placeholder="0.00"
                           disabled={isSubmitting}
                         />
-                        {newItem.quantity && newItem.unitCost && (
+                        <label className="block text-sm font-medium mb-2 mt-3">Unit Selling Price (RS) <span className="text-red-500">*</span></label>
+                        <Input
+                          type="text"
+                          value={newItem.sellingPrice || ""}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setNewItem({ ...newItem, sellingPrice: value })
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          placeholder="0.00"
+                          disabled={isSubmitting}
+                        />
+                        {newItem.quantity && newItem.unitCost && newItem.sellingPrice && (
                           <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
-                            💰 Total: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.unitCost)).toFixed(2)}
+                            💰 Cost: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.unitCost)).toFixed(2)} • Sell: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.sellingPrice)).toFixed(2)}
                           </p>
                         )}
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-sm font-medium mb-2">Box Price (12 items) (RS) <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-medium mb-2">Box Cost (12 items) (RS) <span className="text-red-500">*</span></label>
                         <Input
                           type="text"
                           value={newItem.bulkPrice}
@@ -1235,9 +1165,23 @@ function PurchaseContent() {
                           placeholder={newItem.bulkPrice ? "" : "0.00"}
                           disabled={isSubmitting}
                         />
-                        {newItem.quantity && newItem.bulkPrice && (
+                        <label className="block text-sm font-medium mb-2 mt-3">Box Selling Price (12 items) (RS) <span className="text-red-500">*</span></label>
+                        <Input
+                          type="text"
+                          value={newItem.sellingPrice || ""}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setNewItem({ ...newItem, sellingPrice: value })
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          placeholder="0.00"
+                          disabled={isSubmitting}
+                        />
+                        {newItem.quantity && newItem.bulkPrice && newItem.sellingPrice && (
                           <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-semibold">
-                            💰 Total: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.bulkPrice)).toFixed(2)}
+                            💰 Cost: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.bulkPrice)).toFixed(2)} • Sell: RS {(parseFloat(newItem.quantity) * parseFloat(newItem.sellingPrice)).toFixed(2)}
                           </p>
                         )}
                       </div>
@@ -1247,7 +1191,7 @@ function PurchaseContent() {
                   {/* {newItem.pricingType === "bulk" && (
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                       <p className="text-sm text-blue-800 dark:text-blue-300">
-                        ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk price is for 12 items. The quantity will be automatically multiplied by 12.
+                        ℹ️ <strong>Bulk Pricing:</strong> Enter the number of bulk units (e.g., 5 = 60 items). Bulk sellingPrice is for 12 items. The quantity will be automatically multiplied by 12.
                       </p>
                     </div>
                   )} */}
@@ -1334,7 +1278,8 @@ function PurchaseContent() {
                         <th className="text-left py-2 px-1 sm:px-2 hidden sm:table-cell">SKU</th>
                         <th className="text-center py-2 px-1 sm:px-2">Type</th>
                         <th className="text-right py-2 px-1 sm:px-2">Qty</th>
-                        <th className="text-right py-2 px-1 sm:px-2">Cost</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Actual</th>
+                        <th className="text-right py-2 px-1 sm:px-2">Sell</th>
                         <th className="text-right py-2 px-1 sm:px-2">Total</th>
                         <th className="text-right py-2 px-1 sm:px-2">Action</th>
                       </tr>
@@ -1369,6 +1314,7 @@ function PurchaseContent() {
                           </td>
                           <td className="py-2 px-1 sm:px-2 text-right">{item.quantity}</td>
                           <td className="py-2 px-1 sm:px-2 text-right">RS {item.unitCost.toFixed(2)}</td>
+                          <td className="py-2 px-1 sm:px-2 text-right">RS {(item.sellingPrice || item.unitCost + 1).toFixed(2)}</td>
                           <td className="py-2 px-1 sm:px-2 text-right font-semibold">RS {item.totalCost.toFixed(2)}</td>
                           <td className="py-2 px-1 sm:px-2 text-right">
                             <Button variant="destructive" size="sm" onClick={() => handleRemoveFromCart(index)} disabled={isSubmitting} className="text-xs px-2">
@@ -1457,7 +1403,7 @@ function PurchaseContent() {
                   <label className="block text-sm font-medium mb-2">Search</label>
                   <Input
                     type="text"
-                    placeholder="Search by item or notes..."
+                    placeholder="Search by ID, purchase number, item, or notes..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="text-sm"
@@ -1505,7 +1451,7 @@ function PurchaseContent() {
                     <Card key={purchase.id} className="p-3 sm:p-4 border-2">
                       <div className="flex flex-col sm:flex-row justify-between items-start mb-3 gap-3">
                         <div className="flex-1">
-                          <h3 className="font-semibold text-base sm:text-lg">Purchase #{purchase.id.slice(0, 8)}</h3>
+                          <h3 className="font-semibold text-base sm:text-lg">Purchase #{purchase.purchaseNumber || purchase.id.slice(0, 8)}</h3>
                           <p className="text-xs sm:text-sm text-muted-foreground">
                             {purchaseDate.toLocaleDateString("en-GB", {
                               day: "2-digit",
@@ -1542,24 +1488,30 @@ function PurchaseContent() {
 
                       <div className="border-t pt-3">
                         <h4 className="font-medium text-xs sm:text-sm mb-2">Items:</h4>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           {purchase.items.map((item, idx) => (
-                            <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs sm:text-sm gap-1 sm:gap-2">
-                              <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
-                                <span>
-                                  {item.itemName} <span className="text-muted-foreground text-xs">({item.sku})</span> x {item.quantity}
-                                </span>
-                                {item.pricingType && (
-                                  <span className={`px-1.5 sm:px-2 py-0.5 rounded text-xs font-medium ${
-                                    item.pricingType === "bulk"
-                                      ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
-                                      : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                                  }`}>
-                                    {item.pricingType === "bulk" ? "Bulk" : "Unit"}
+                            <div key={idx} className="space-y-2">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs sm:text-sm gap-1 sm:gap-2">
+                                <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+                                  <span>
+                                    {item.itemName} <span className="text-muted-foreground text-xs">({item.sku})</span> x {item.quantity}
                                   </span>
-                                )}
+                                  {item.pricingType && (
+                                    <span className={`px-1.5 sm:px-2 py-0.5 rounded text-xs font-medium ${
+                                      item.pricingType === "bulk"
+                                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                                        : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                                    }`}>
+                                      {item.pricingType === "bulk" ? "Bulk" : "Unit"}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-medium whitespace-nowrap">RS {item.totalCost.toFixed(2)}</span>
                               </div>
-                              <span className="font-medium whitespace-nowrap">RS {item.totalCost.toFixed(2)}</span>
+                              <div className="flex flex-col sm:flex-row justify-between gap-2 text-xs sm:text-sm text-muted-foreground">
+                                <span>Actual: RS {item.actualPrice?.toFixed(2) ?? item.unitCost.toFixed(2)}</span>
+                                <span>Sell: RS {item.sellingPrice?.toFixed(2) ?? "0.00"}</span>
+                              </div>
                             </div>
                           ))}
                         </div>

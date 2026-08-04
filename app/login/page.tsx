@@ -91,7 +91,8 @@ export default function LoginPage() {
             setSuccessMessage("Verification email sent! Please check your email (including spam folder) and click the verification link to activate your account.")
           } catch (emailError: any) {
             console.error("Failed to resend verification email:", emailError)
-            setError("Your email is not verified. We tried to resend the verification email but encountered an error. Please try again later.")
+            // Still allow user to proceed with a warning message
+            setSuccessMessage("Your email needs verification. If you don't receive a verification email within a few minutes, please check your spam folder or request a new one.")
           }
           await auth.signOut() // Sign out the user
           setIsLoading(false)

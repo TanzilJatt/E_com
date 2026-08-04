@@ -44,6 +44,7 @@ function ExpensesContent() {
     amount: 0,
     description: "",
     date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().split(" ")[0],
   })
 
   useEffect(() => {
@@ -96,7 +97,7 @@ function ExpensesContent() {
         category: formData.category,
         amount: Number.parseFloat(formData.amount.toString()),
         description: formData.description,
-        date: Timestamp.fromDate(new Date(formData.date)),
+        date: Timestamp.fromDate(new Date(`${formData.date}T${formData.time}`)),
       }
 
       if (editingId) {
@@ -111,6 +112,7 @@ function ExpensesContent() {
         amount: 0,
         description: "",
         date: new Date().toISOString().split("T")[0],
+        time: new Date().toTimeString().split(" ")[0],
       })
       setEditingId(null)
       setIsAdding(false)
@@ -123,12 +125,14 @@ function ExpensesContent() {
   }
 
   const handleEdit = (expense: Expense) => {
+    const originalDate = expense.date?.toDate?.()
     setFormData({
       name: expense.name,
       category: expense.category,
       amount: expense.amount,
       description: expense.description,
-      date: expense.date?.toDate?.().toISOString().split("T")[0] || "",
+      date: originalDate ? originalDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      time: originalDate ? originalDate.toTimeString().split(" ")[0] : new Date().toTimeString().split(" ")[0],
     })
     setEditingId(expense.id)
     setIsAdding(true)
@@ -164,9 +168,7 @@ function ExpensesContent() {
   }
 
   const filteredExpenses = expenses.filter((expense) => {
-    const matchesSearch =
-      expense.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.description.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = expense.name.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = selectedCategory === "All" || expense.category === selectedCategory
 
     return matchesSearch && matchesCategory
@@ -201,9 +203,9 @@ function ExpensesContent() {
     
     // Prepare table data
     const tableData = filteredExpenses.map((expense) => {
-      const date = expense.date?.toDate 
+      const date = expense.date?.toDate?.()
         ? new Date(expense.date.toDate()).toLocaleDateString()
-        : new Date(expense.date).toLocaleDateString()
+        : "N/A"
       
       return [
         date,
@@ -356,6 +358,15 @@ function ExpensesContent() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Time <span className="text-red-500">*</span></label>
+                <Input
+                  type="time"
+                  value={formData.time}
+                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                  required
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Description </label>
                 <textarea
@@ -390,6 +401,7 @@ function ExpensesContent() {
                       amount: 0,
                       description: "",
                       date: new Date().toISOString().split("T")[0],
+                      time: new Date().toTimeString().split(" ")[0],
                     })
                     setEditingId(null)
                     setIsAdding(false)
@@ -431,25 +443,25 @@ function ExpensesContent() {
 
               <Card className="p-4 sm:p-6">
                 <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Distribution</h2>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={chartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: RS ${value}`}
-                      outerRadius={70}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="space-y-3">
+                  {chartData.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: COLORS[chartData.indexOf(item) % COLORS.length] }}
+                        />
+                        <span className="font-medium text-sm">{item.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">RS {item.value.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {totalExpenses > 0 ? ((item.value / totalExpenses) * 100).toFixed(1) : 0}%
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </Card>
             </>
           )}
@@ -526,11 +538,7 @@ function ExpensesContent() {
                     )}
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Date:</span>
-                      <span>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Created:</span>
-                      <span>{expense.createdAt?.toDate?.()?.toLocaleString() || "N/A"}</span>
+                      <span>{expense.date?.toDate?.()?.toLocaleString() || "N/A"}</span>
                     </div>
                   </div>
 
@@ -601,7 +609,7 @@ function ExpensesContent() {
                         <td className="py-3 px-4">
                           <div className="text-xs text-muted-foreground">
                             <div>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</div>
-                            <div className="text-[10px]">{expense.createdAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                            <div className="text-[10px]">{expense.date?.toDate?.()?.toLocaleTimeString() || ""}</div>
                           </div>
                         </td>
                         <td className="py-3 px-4 text-right font-semibold">RS {expense.amount.toFixed(2)}</td>

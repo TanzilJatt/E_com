@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
+import { logActivity } from "@/lib/activity-logs"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -30,7 +31,8 @@ function ItemsContent() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
-    price: 0,
+    sellingPrice: 0,
+    actualPrice: 0,
     quantity: 0,
     description: "",
     vendor: "",
@@ -38,6 +40,8 @@ function ItemsContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPriceOverrideWarning, setShowPriceOverrideWarning] = useState(false)
+  const [sellingPriceOverrideConfirmed, setPriceOverrideConfirmed] = useState(false)
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, errors: [] as string[] })
@@ -121,20 +125,32 @@ function ItemsContent() {
     setIsSubmitting(true)
 
     try {
-      if (!formData.name || formData.price < 0 || formData.quantity < 0) {
+      if (!formData.name || formData.sellingPrice < 0 || formData.quantity < 0) {
         setError("Please fill in all required fields (Name, Price, Quantity)")
         setIsSubmitting(false)
         return
       }
 
+      // Validate that selling price is not below actual price (unless override is confirmed)
+      if (formData.sellingPrice < formData.actualPrice && !sellingPriceOverrideConfirmed) {
+        setShowPriceOverrideWarning(true)
+        setIsSubmitting(false)
+        return
+      }
+
+      // Reset override confirmation after successful submission
+      if (!sellingPriceOverrideConfirmed) {
+        setPriceOverrideConfirmed(false)
+      }
+
 
       if (editingId) {
-        await updateItem(editingId, formData, auth?.currentUser?.uid || "system")
+        await updateItem(editingId, formData, auth?.currentUser?.uid || "system", sellingPriceOverrideConfirmed)
       } else {
         await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
-      setFormData({ name: "", price: 0, quantity: 0, description: "", vendor: "" })
+      setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
       setEditingId(null)
       setIsAdding(false)
       setError("")
@@ -150,7 +166,8 @@ function ItemsContent() {
   const handleEdit = (item: Item) => {
     setFormData({
       name: item.name,
-      price: item.price,
+      sellingPrice: item.sellingPrice || item.price || 0,
+      actualPrice: item.actualPrice || item.costPrice || 0,
       quantity: item.quantity,
       description: item.description,
       vendor: item.vendor || "",
@@ -210,7 +227,8 @@ function ItemsContent() {
         try {
           // Validate required fields
           let name = row.name || row.Name || row.item_name || row["Item Name"] || ""
-          const price = Number(row.price || row.Price || 0)
+          const sellingPrice = Number(row.sellingPrice || row.SellingPrice || row.price || row.Price || 0)
+          const actualPrice = Number(row.actualPrice || row.ActualPrice || row.costPrice || row.CostPrice || row.cost_price || 0)
           const quantity = Number(row.quantity || row.Quantity || 0)
           const description = row.description || row.Description || ""
           const vendor = row.vendor || row.Vendor || ""
@@ -220,8 +238,18 @@ function ItemsContent() {
             continue
           }
 
-          if (price < 0) {
-            errors.push(`Row ${rowNum}: Price must be positive`)
+          if (sellingPrice < 0) {
+            errors.push(`Row ${rowNum}: Selling price must be positive`)
+            continue
+          }
+
+          if (actualPrice < 0) {
+            errors.push(`Row ${rowNum}: Actual price must be positive`)
+            continue
+          }
+
+          if (sellingPrice <= actualPrice) {
+            errors.push(`Row ${rowNum}: Selling price must be greater than actual price`)
             continue
           }
 
@@ -252,9 +280,9 @@ function ItemsContent() {
           )
 
           if (existingItem) {
-            // Item exists - check if price matches
-            if (existingItem.price === price) {
-              // Same name and price - update quantity (add to existing)
+            // Item exists - check if sellingPrice matches
+            if (existingItem.sellingPrice === sellingPrice) {
+              // Same name and sellingPrice - update quantity (add to existing)
               const newQuantity = existingItem.quantity + quantity
               await updateItem(
                 existingItem.id,
@@ -273,7 +301,7 @@ function ItemsContent() {
               setImportProgress({ current: i + 1, total: jsonData.length, errors })
               continue
             } else {
-              // Same name but different price - create new item with suffix
+              // Same name but different sellingPrice - create new item with suffix
               let suffix = 1
               let newName = `${trimmedName}_${suffix}`
               
@@ -306,7 +334,8 @@ function ItemsContent() {
           const itemId = await addItem(
             {
               name: name.trim(),
-              price,
+              sellingPrice,
+              actualPrice,
               quantity,
               description: description.trim(),
               vendor: vendor.trim(),
@@ -320,7 +349,8 @@ function ItemsContent() {
             currentItems.push({
               id: itemId,
               name: name.trim(),
-              price,
+              sellingPrice,
+              actualPrice,
               quantity,
               description: description.trim(),
               vendor: vendor.trim(),
@@ -380,11 +410,12 @@ function ItemsContent() {
   }
 
   const downloadExcelTemplate = () => {
-    // Create a sample Excel template
+    // Create a sample Excel template with correct column names
     const templateData = [
       {
         name: "Sample Item",
-        price: 100.00,
+        sellingPrice: 100.00,
+        actualPrice: 80.00,
         quantity: 50,
         description: "This is a sample item description",
         vendor: "Sample Vendor",
@@ -398,7 +429,8 @@ function ItemsContent() {
     // Set column widths
     worksheet["!cols"] = [
       { wch: 30 }, // name
-      { wch: 10 }, // price
+      { wch: 15 }, // sellingPrice
+      { wch: 15 }, // actualPrice
       { wch: 10 }, // quantity
       { wch: 50 }, // description
       { wch: 30 }, // vendor
@@ -444,9 +476,10 @@ function ItemsContent() {
         item.name,
         item.vendor || "-",
         item.description || "-",
-        `RS ${item.price.toFixed(2)}`,
+        `RS ${(item.sellingPrice || item.price || 0).toFixed(2)}`,
+        ((item.actualPrice || item.costPrice || 0) > 0) ? `RS ${(item.actualPrice || item.costPrice || 0).toFixed(2)}` : "-",
         item.quantity.toString(),
-        `RS ${(item.price * item.quantity).toFixed(2)}`
+        `RS ${((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}`
       ]
     })
     
@@ -454,7 +487,7 @@ function ItemsContent() {
     const startY = searchTerm ? (dateFilter.start && dateFilter.end ? 48 : 42) : (dateFilter.start && dateFilter.end ? 42 : 36)
     autoTable(doc, {
       startY,
-      head: [["SKU", "Item Name", "Vendor", "Description", "Price", "Quantity", "Total Value"]],
+      head: [["SKU", "Item Name", "Vendor", "Description", "Price", "Cost Price", "Quantity", "Total Value"]],
       body: tableData,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 2 },
@@ -465,8 +498,9 @@ function ItemsContent() {
         2: { cellWidth: 25 },
         3: { cellWidth: 40 },
         4: { cellWidth: 20 },
-        5: { cellWidth: 18 },
-        6: { cellWidth: 25 }
+        5: { cellWidth: 20 },
+        6: { cellWidth: 18 },
+        7: { cellWidth: 25 }
       }
     })
     
@@ -476,7 +510,7 @@ function ItemsContent() {
     doc.text(`Total Items: ${filteredItems.length}`, 14, finalY + 10)
     const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
     doc.text(`Total Quantity: ${totalQuantity} units`, 14, finalY + 18)
-    const totalValue = filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    const totalValue = filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0)
     doc.text(`Total Inventory Value: RS ${totalValue.toFixed(2)}`, 14, finalY + 26)
     
     // Save PDF
@@ -485,10 +519,11 @@ function ItemsContent() {
   }
 
   const filteredItems = items.filter(
-    (item) =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.vendor && item.vendor.toLowerCase().includes(searchTerm.toLowerCase())),
+    (item) => item.name.toLowerCase().includes(searchTerm.toLowerCase())
+  ).filter((item, index, self) =>
+    index === self.findIndex((i) => i.id === item.id)
+  ).filter((item, index, self) =>
+    index === self.findIndex((i) => i.id === item.id)
   )
 
   return (
@@ -582,7 +617,7 @@ function ItemsContent() {
                 <p className="text-muted-foreground mb-2">Your Excel file must have these columns:</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
                   <li><strong>name</strong> (required, max 30 chars) - Item name</li>
-                  <li><strong>price</strong> (required, positive number) - Item price</li>
+                  <li><strong>sellingPrice</strong> (required, positive number) - Item sellingPrice</li>
                   <li><strong>quantity</strong> (required, positive number) - Stock quantity</li>
                   <li><strong>description</strong> (optional, max 100 chars) - Item description</li>
                   <li><strong>vendor</strong> (optional, max 30 chars) - Vendor name</li>
@@ -606,8 +641,8 @@ function ItemsContent() {
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-3 rounded-lg">
                 <p className="font-semibold mb-1">🔄 Duplicate Handling:</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2 text-xs">
-                  <li><strong>Same name + same price:</strong> Quantity is added to existing item</li>
-                  <li><strong>Same name + different price:</strong> New item created as "name_1", "name_2", etc.</li>
+                  <li><strong>Same name + same sellingPrice:</strong> Quantity is added to existing item</li>
+                  <li><strong>Same name + different sellingPrice:</strong> New item created as "name_1", "name_2", etc.</li>
                   <li>This prevents accidental overwrites while allowing stock updates</li>
                 </ul>
               </div>
@@ -685,16 +720,29 @@ function ItemsContent() {
               </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-1">Price (RS) *</label>
+                <label className="block text-sm font-medium mb-1">Selling Price (RS) *</label>
                 <Input
                   type="number"
-                  placeholder={formData.price > 0 ? "" : "0.00"}
+                  placeholder={formData.sellingPrice > 0 ? "" : "0.00"}
                   step="0.01"
                   min="0"
-                  value={formData.price || ""}
-                  onChange={(e) => setFormData({ ...formData, price: Number.parseFloat(e.target.value) || 0 })}
+                  value={formData.sellingPrice || ""}
+                  onChange={(e) => setFormData({ ...formData, sellingPrice: Number.parseFloat(e.target.value) || 0 })}
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Actual Price (RS) *</label>
+                <Input
+                  type="number"
+                  placeholder={formData.actualPrice > 0 ? "" : "0.00"}
+                  step="0.01"
+                  min="0"
+                  value={formData.actualPrice || ""}
+                  onChange={(e) => setFormData({ ...formData, actualPrice: Number.parseFloat(e.target.value) || 0 })}
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">Selling price cannot be lower than actual price</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
@@ -745,6 +793,72 @@ function ItemsContent() {
                 </p> */}
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
+              
+              {showPriceOverrideWarning && (
+                <div className="md:col-span-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="text-yellow-600 dark:text-yellow-400 mt-0.5">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
+                        Price Below Cost Warning
+                      </h4>
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-3">
+                        The selling price (RS {formData.sellingPrice.toFixed(2)}) is lower than the actual price (RS {formData.actualPrice.toFixed(2)}). This will result in a loss on each sale.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={async () => {
+                            setPriceOverrideConfirmed(true)
+                            setShowPriceOverrideWarning(false)
+                            setIsSubmitting(true)
+                            try {
+                              if (editingId) {
+                                await updateItem(editingId, formData, auth?.currentUser?.uid || "system", true)
+                              } else {
+                                await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
+                              }
+                              setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
+                              setEditingId(null)
+                              setIsAdding(false)
+                              setError("")
+                              setShowPriceOverrideWarning(false)
+                              await fetchItems()
+                            } catch (err: any) {
+                              console.error("[v0] Error:", err.message)
+                              setError(err.message || "Failed to save item")
+                            } finally {
+                              setIsSubmitting(false)
+                              setPriceOverrideConfirmed(false)
+                            }
+                          }}
+                          disabled={isSubmitting}
+                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                        >
+                          {isSubmitting ? "Saving..." : "Override & Save"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setShowPriceOverrideWarning(false)
+                            setPriceOverrideConfirmed(false)
+                          }}
+                          disabled={isSubmitting}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
              
               <div className="md:col-span-2 flex gap-2">
                 <Button type="submit" className="flex-1" disabled={isSubmitting}>
@@ -754,10 +868,12 @@ function ItemsContent() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setFormData({ name: "", price: 0, quantity: 0, description: "", vendor: "" })
+                    setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
                     setEditingId(null)
                     setIsAdding(false)
                     setError("")
+                    setShowPriceOverrideWarning(false)
+                    setPriceOverrideConfirmed(false)
                   }}
                   className="flex-1"
                   disabled={isSubmitting}
@@ -777,7 +893,7 @@ function ItemsContent() {
         <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
           <Input
             type="text"
-            placeholder="Search by name, SKU, or vendor..."
+            placeholder="Search by name, SKU, ID, or vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full sm:max-w-md"
@@ -835,12 +951,18 @@ function ItemsContent() {
                       </div>
                     )}
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Price:</span>
-                      <span className="font-semibold">RS {item.price.toFixed(2)}</span>
+                      <span className="text-muted-foreground">Selling Price:</span>
+                      <span className="font-semibold">RS {(item.sellingPrice || item.price || 0).toFixed(2)}</span>
                     </div>
+                    {((item.actualPrice || item.costPrice || 0) > 0) && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Actual Price:</span>
+                        <span className="font-semibold">RS {(item.actualPrice || item.costPrice || 0).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm border-t pt-2">
                       <span className="text-muted-foreground">Total Value:</span>
-                      <span className="font-bold text-primary">RS {(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="font-bold text-primary">RS {((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Created:</span>
@@ -886,7 +1008,7 @@ function ItemsContent() {
                   </div>
                   <div className="flex justify-between font-bold text-primary text-lg pt-2 border-t">
                     <span>Total Value:</span>
-                    <span>RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
+                    <span>RS {filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0).toFixed(2)}</span>
                   </div>
                 </div>
               </Card>
@@ -902,7 +1024,8 @@ function ItemsContent() {
                       <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Selling Price</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Actual Price</th>
                       <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
                       <th className="text-right py-3 px-4 font-semibold text-sm">Total Value</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
@@ -935,7 +1058,12 @@ function ItemsContent() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <span className="font-semibold">RS {item.price.toFixed(2)}</span>
+                          <span className="font-semibold">RS {(item.sellingPrice || item.price || 0).toFixed(2)}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="font-semibold text-muted-foreground">
+                            {((item.actualPrice || item.costPrice || 0) > 0) ? `RS ${(item.actualPrice || item.costPrice || 0).toFixed(2)}` : "—"}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
@@ -944,7 +1072,7 @@ function ItemsContent() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <span className="font-semibold text-primary">
-                            RS {(item.price * item.quantity).toFixed(2)}
+                            RS {((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}
                           </span>
                         </td>
                         <td className="py-3 px-4">
@@ -987,14 +1115,31 @@ function ItemsContent() {
                       <td colSpan={4} className="py-3 px-4 font-semibold">
                         Total ({filteredItems.length} items)
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold">
-                        RS {filteredItems.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
-                      </td>
+                     <td className="py-3 px-4 text-right font-bold text-primary text-lg">
+  RS {filteredItems
+    .reduce((sum, item) => {
+      const price = Number(item.sellingPrice ?? item.price) || 0;
+      const qty = Number(item.quantity) || 0;
+
+      return sum + (price * qty);
+    }, 0)
+    .toFixed(2)}
+</td>
+                      <td className="py-3 px-4 text-right font-bold text-red-500">
+      RS {filteredItems
+        .reduce((sum, item) => {
+          const cost = Number(item.costPrice) || 0;
+          const qty = Number(item.quantity) || 0;
+          return sum + (cost * qty);
+        }, 0)
+        .toFixed(2)}
+    </td>
+              
                       <td className="py-3 px-4 text-right font-semibold">
                         {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
                       </td>
                       <td className="py-3 px-4 text-right font-bold text-primary text-lg">
-                        RS {filteredItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+                        RS {filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0).toFixed(2)}
                       </td>
                       <td colSpan={3}></td>
                     </tr>

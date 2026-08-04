@@ -43,6 +43,7 @@ function BalanceContent() {
   const [totalSales, setTotalSales] = useState(0)
   const [netFlow, setNetFlow] = useState(0)
   const [totalInventoryValue, setTotalInventoryValue] = useState(0)
+  const [totalAmountSpent, setTotalAmountSpent] = useState(0)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -129,7 +130,7 @@ function BalanceContent() {
           quantityChange: -item.quantity, // Negative (inventory decreases)
           moneyFlow,
           balance: runningBalance,
-          description: `Sold ${item.quantity} units @ RS ${item.pricePerUnit}`,
+          description: `Sold ${item.quantity} units @ RS ${item.sellingPricePerUnit}`,
         })
       })
     })
@@ -142,12 +143,14 @@ function BalanceContent() {
     // Calculate summary
     const purchaseTotal = purchasesData.reduce((sum, p) => sum + p.totalAmount, 0)
     const salesTotal = salesData.reduce((sum, s) => sum + s.totalAmount, 0)
-    const inventoryValue = itemsData.reduce((sum, i) => sum + i.price * i.quantity, 0)
+    const inventoryValue = itemsData.reduce((sum, i) => sum + ((i.sellingPrice || i.price || 0) * i.quantity), 0)
+    const amountSpent = itemsData.reduce((sum, i) => sum + ((i.actualPrice || i.costPrice || 0) * i.quantity), 0)
 
     setTotalPurchases(purchaseTotal)
     setTotalSales(salesTotal)
     setNetFlow(salesTotal - purchaseTotal)
     setTotalInventoryValue(inventoryValue)
+    setTotalAmountSpent(amountSpent)
   }
 
   const filteredEntries = balanceEntries.filter((entry) => {
@@ -187,19 +190,20 @@ function BalanceContent() {
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 32)
     
     doc.setFontSize(11)
-    doc.setFont(undefined, 'bold')
+    doc.setFont("helvetica", 'bold')
     doc.text("Overall Totals:", 14, 42)
-    doc.setFont(undefined, 'normal')
+    doc.setFont("helvetica", 'normal')
     doc.text(`Total Purchases: RS ${totalPurchases.toFixed(2)}`, 20, 50)
     doc.text(`Total Sales: RS ${totalSales.toFixed(2)}`, 20, 58)
     doc.text(`Net Flow: RS ${netFlow.toFixed(2)}`, 20, 66)
     doc.text(`Inventory Value: RS ${totalInventoryValue.toFixed(2)}`, 20, 74)
+    doc.text(`Total Amount Spent: RS ${totalAmountSpent.toFixed(2)}`, 20, 82)
 
     // Filtered Totals (if filters are applied)
     if (filteredEntries.length < balanceEntries.length || searchTerm || startDate || endDate) {
-      doc.setFont(undefined, 'bold')
+      doc.setFont("helvetica", 'bold')
       doc.text("Filtered Period Totals:", 14, 86)
-      doc.setFont(undefined, 'normal')
+      doc.setFont("helvetica", 'normal')
       doc.text(`Filtered Purchases: RS ${filteredPurchases.toFixed(2)}`, 20, 94)
       doc.text(`Filtered Sales: RS ${filteredSales.toFixed(2)}`, 20, 102)
       doc.text(`Filtered Net Flow: RS ${filteredNetFlow.toFixed(2)}`, 20, 110)
@@ -263,7 +267,7 @@ function BalanceContent() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <Card className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -303,6 +307,16 @@ function BalanceContent() {
                 <p className="text-2xl font-bold text-blue-600">RS {totalInventoryValue.toFixed(2)}</p>
               </div>
               <Package className="h-8 w-8 text-blue-600" />
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Amount Spent</p>
+                <p className="text-2xl font-bold text-orange-600">RS {totalAmountSpent.toFixed(2)}</p>
+              </div>
+              <Package className="h-8 w-8 text-orange-600" />
             </div>
           </Card>
         </div>

@@ -44,13 +44,16 @@ function DashboardContent() {
           return
         }
 
+
+
         // Get user-specific items
         const { getItems } = await import("@/lib/items")
         const items = await getItems(userId)
 
         // Get user-specific sales
         const { getSales } = await import("@/lib/sales")
-        const sales = await getSales(userId)
+        // Trigger migration for existing sales
+        const sales = await getSales(userId, true)
 
         // Calculate stats
         const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
@@ -101,8 +104,6 @@ function DashboardContent() {
     // Search filter
     if (searchTerm) {
       filtered = filtered.filter((sale) =>
-        sale.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sale.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.items?.some((item: any) => item.itemName?.toLowerCase().includes(searchTerm.toLowerCase()))
       )
     }
@@ -168,7 +169,7 @@ function DashboardContent() {
               <label className="block text-sm font-medium mb-2">Search</label>
               <Input
                 type="text"
-                placeholder="Search by ID or item..."
+                placeholder="Search by item name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -221,9 +222,11 @@ function DashboardContent() {
             <div className="text-3xl font-bold text-primary mt-2">{stats.totalSales}</div>
           </Card>
           <Card className="p-6">
-            <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
-            <div className="text-3xl font-bold text-primary mt-2">RS {stats.totalRevenue.toFixed(2)}</div>
-          </Card>
+  <div className="text-xs font-medium text-muted-foreground">Total Revenue</div>
+  <div className="text-xl font-bold text-primary mt-2">
+    RS {stats.totalRevenue.toFixed(2)}
+  </div>
+</Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Retail Sales</div>
             <div className="text-3xl font-bold text-primary mt-2">{stats.retailSales}</div>
@@ -239,10 +242,10 @@ function DashboardContent() {
           <Card className="col-span-1 lg:col-span-2 p-6">
             <h2 className="text-lg font-semibold mb-4">Revenue Trend</h2>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis dataKey="date" stroke="var(--muted-foreground)" />
-                <YAxis stroke="var(--muted-foreground)" />
+                <YAxis stroke="var(--muted-foreground)" domain={[0, 'auto']} tickCount={5} allowDecimals={false} />
                 <Tooltip />
                 <Line type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2} />
               </LineChart>
@@ -287,6 +290,7 @@ function DashboardContent() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
+                        <th className="text-left py-2 px-2">Sale #</th>
                         <th className="text-left py-2 px-2">Date</th>
                         <th className="text-left py-2 px-2">Type</th>
                         <th className="text-left py-2 px-2">Description</th>
@@ -295,12 +299,15 @@ function DashboardContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSales.map((sale) => {
+                      {filteredSales.map((sale, index) => {
                         const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
                         const itemsDescription = sale.items?.map((item: any) => `${item.itemName} (${item.quantity})`).join(", ") || "No items"
 
                         return (
                           <tr key={sale.id} className="border-b border-border hover:bg-muted">
+                            <td className="py-2 px-2 whitespace-nowrap font-semibold">
+                              #{(sale as any).saleNumber || (index + 1)}
+                            </td>
                             <td className="py-2 px-2 whitespace-nowrap">
                               {saleDate.toLocaleDateString('en-GB', {
                                 day: '2-digit',
@@ -381,3 +388,4 @@ function DashboardContent() {
 export default function Dashboard() {
   return <DashboardContent />
 }
+ 

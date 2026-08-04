@@ -98,8 +98,8 @@ export async function getExpenses(userId?: string): Promise<Expense[]> {
       .map((doc) => ({
         id: doc.id,
         ...doc.data(),
-      }))
-      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)) as Expense[]
+      } as Expense))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
   } catch (error: any) {
     console.error("Error fetching expenses:", error)
     throw new Error(error.message || "Failed to fetch expenses")
