@@ -1,0 +1,658 @@
+"use client"
+
+import type React from "react"
+import { useEffect, useState } from "react"
+import { auth } from "@/lib/firebase"
+import { Timestamp } from "firebase/firestore"
+import { Navbar } from "@/components/navbar"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  addExpense,
+  updateExpense,
+  deleteExpense,
+  getExpenses,
+  getTotalExpenses,
+  getTotalExpensesByCategory,
+  type Expense,
+} from "@/lib/expenses"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+import { DateFilter, type DatePreset } from "@/components/date-filter"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
+
+const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Supplies", "Marketing", "Salaries", "Shipping", "Equipment", "Other"]
+const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"]
+
+function ExpensesContent() {
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([])
+  const [isAdding, setIsAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("All")
+  const [totalExpenses, setTotalExpenses] = useState(0)
+  const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState("")
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [formData, setFormData] = useState({
+    name: "",
+    category: "Other",
+    amount: 0,
+    description: "",
+    date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().split(" ")[0],
+  })
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      const userId = auth?.currentUser?.uid
+      if (!userId) {
+        setError("Please log in to view expenses")
+        setLoading(false)
+        return
+      }
+      
+      const expensesList = await getExpenses(userId)
+      setAllExpenses(expensesList)
+      setExpenses(expensesList)
+
+      const total = await getTotalExpenses(userId)
+      setTotalExpenses(total)
+
+      const breakdown = await getTotalExpensesByCategory(userId)
+      setCategoryBreakdown(breakdown)
+
+      setError("")
+    } catch (err: any) {
+      console.error("Error fetching data:", err)
+      setError("Failed to load expenses")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    setIsSubmitting(true)
+
+    try {
+      if (!formData.name || formData.amount <= 0) {
+        setError("Please fill in all required fields")
+        setIsSubmitting(false)
+        return
+      }
+
+      const expenseData = {
+        name: formData.name,
+        category: formData.category,
+        amount: Number.parseFloat(formData.amount.toString()),
+        description: formData.description,
+        date: Timestamp.fromDate(new Date(`${formData.date}T${formData.time}`)),
+      }
+
+      if (editingId) {
+        await updateExpense(editingId, expenseData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
+      } else {
+        await addExpense(expenseData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
+      }
+
+      setFormData({
+        name: "",
+        category: "Other",
+        amount: 0,
+        description: "",
+        date: new Date().toISOString().split("T")[0],
+        time: new Date().toTimeString().split(" ")[0],
+      })
+      setEditingId(null)
+      setIsAdding(false)
+      await fetchData()
+    } catch (err: any) {
+      setError(err.message || "Failed to save expense")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleEdit = (expense: Expense) => {
+    const originalDate = expense.date?.toDate?.()
+    setFormData({
+      name: expense.name,
+      category: expense.category,
+      amount: expense.amount,
+      description: expense.description,
+      date: originalDate ? originalDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      time: originalDate ? originalDate.toTimeString().split(" ")[0] : new Date().toTimeString().split(" ")[0],
+    })
+    setEditingId(expense.id)
+    setIsAdding(true)
+    setError("")
+  }
+
+  const handleDelete = async (id: string, name: string) => {
+    if (window.confirm("Are you sure you want to delete this expense?")) {
+      try {
+        await deleteExpense(id, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System", name)
+        await fetchData()
+      } catch (err: any) {
+        setError("Failed to delete expense")
+      }
+    }
+  }
+
+  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
+    setDateFilter({ start: startDate, end: endDate })
+    
+    if (!startDate || !endDate) {
+      setExpenses(allExpenses)
+      return
+    }
+
+    const filtered = allExpenses.filter((expense) => {
+      const expenseDate = expense.createdAt?.toDate?.()
+      if (!expenseDate) return false
+      return expenseDate >= startDate && expenseDate <= endDate
+    })
+    
+    setExpenses(filtered)
+  }
+
+  const filteredExpenses = expenses.filter((expense) => {
+    const matchesSearch = expense.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = selectedCategory === "All" || expense.category === selectedCategory
+
+    return matchesSearch && matchesCategory
+  })
+
+  const exportExpensesToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Add title
+    doc.setFontSize(18)
+    doc.text("Expenses Report", 14, 22)
+    
+    // Add date range and filters
+    doc.setFontSize(10)
+    if (dateFilter.start && dateFilter.end) {
+      doc.text(
+        `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
+        14,
+        30
+      )
+    } else {
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    }
+    
+    // Add filter info
+    let filterInfo = []
+    if (selectedCategory !== "All") filterInfo.push(`Category: ${selectedCategory}`)
+    if (searchTerm) filterInfo.push(`Search: "${searchTerm}"`)
+    if (filterInfo.length > 0) {
+      doc.text(`Filters: ${filterInfo.join(", ")}`, 14, dateFilter.start && dateFilter.end ? 36 : 36)
+    }
+    
+    // Prepare table data
+    const tableData = filteredExpenses.map((expense) => {
+      const date = expense.date?.toDate?.()
+        ? new Date(expense.date.toDate()).toLocaleDateString()
+        : "N/A"
+      
+      return [
+        date,
+        expense.name,
+        expense.category,
+        expense.description || "-",
+        `RS ${expense.amount.toFixed(2)}`
+      ]
+    })
+    
+    // Add table
+    const startY = filterInfo.length > 0 ? 42 : (dateFilter.start && dateFilter.end ? 36 : 36)
+    autoTable(doc, {
+      startY,
+      head: [["Date", "Name", "Category", "Description", "Amount"]],
+      body: tableData,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 60 },
+        4: { cellWidth: 25 }
+      }
+    })
+    
+    // Add summary with category breakdown
+    const finalY = (doc as any).lastAutoTable.finalY || startY
+    doc.setFontSize(12)
+    doc.text(`Total Expenses: ${filteredExpenses.length}`, 14, finalY + 10)
+    const totalAmount = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+    doc.text(`Total Amount: RS ${totalAmount.toFixed(2)}`, 14, finalY + 18)
+    
+    // Add category breakdown
+    doc.setFontSize(10)
+    doc.text("Category Breakdown:", 14, finalY + 28)
+    const categoryTotals: Record<string, number> = {}
+    filteredExpenses.forEach((expense) => {
+      categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.amount
+    })
+    
+    let yPos = finalY + 34
+    Object.entries(categoryTotals).forEach(([category, amount]) => {
+      doc.text(`${category}: RS ${amount.toFixed(2)}`, 20, yPos)
+      yPos += 6
+    })
+    
+    // Save PDF
+    const fileName = `expenses-report-${new Date().toISOString().split("T")[0]}.pdf`
+    doc.save(fileName)
+  }
+
+  const chartData = EXPENSE_CATEGORIES.map((cat) => ({
+    name: cat,
+    value: categoryBreakdown[cat] || 0,
+  })).filter((item) => item.value > 0)
+
+  return (
+    <>
+      <Navbar />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        {/* Header - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Expenses</h1>
+            <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Track and manage your business expenses</p>
+          </div>
+          <Button onClick={() => setIsAdding(!isAdding)} className="w-full sm:w-auto">
+            {isAdding ? "Cancel" : "+ Add Expense"}
+          </Button>
+        </div>
+
+        {/* Date Filter */}
+        <DateFilter onFilter={handleDateFilter} />
+
+        {/* Stats - Mobile Responsive */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Expenses</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">RS {totalExpenses.toFixed(2)}</div>
+          </Card>
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Total Transactions</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">{expenses.length}</div>
+          </Card>
+          <Card className="p-4 sm:p-6">
+            <div className="text-xs sm:text-sm font-medium text-muted-foreground">Categories</div>
+            <div className="text-2xl sm:text-3xl font-bold text-primary mt-1 sm:mt-2">{Object.keys(categoryBreakdown).length}</div>
+          </Card>
+        </div>
+
+        {isAdding && (
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4">{editingId ? "Edit Expense" : "Add New Expense"}</h2>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Expense Name <span className="text-red-500">*</span></label>
+                <Input
+                  type="text"
+                  placeholder={formData.name ? "" : "e.g., Office Rent"}
+                  value={formData.name}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Only allow letters, numbers, and spaces, max 30 characters
+                    if (value.length <= 30 && /^[a-zA-Z0-9\s]*$/.test(value)) {
+                      setFormData({ ...formData, name: value })
+                    }
+                  }}
+                  required
+                />
+                {/* <p className="text-xs text-muted-foreground mt-1">
+                  {formData.name.length}/30 characters (letters, numbers, and spaces only)
+                </p> */}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Category <span className="text-red-500">*</span></label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
+                  required
+                >
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Amount (RS) <span className="text-red-500">*</span></label>
+                <Input
+                  type="number"
+                  placeholder={formData.amount > 0 ? "" : "0.00"}
+                  step="0.01"
+                  min="0"
+                  value={formData.amount || ""}
+                  onChange={(e) => setFormData({ ...formData, amount: Number.parseFloat(e.target.value) || 0 })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Date <span className="text-red-500">*</span></label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Time <span className="text-red-500">*</span></label>
+                <Input
+                  type="time"
+                  value={formData.time}
+                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Description </label>
+                <textarea
+                  placeholder={formData.description ? "" : "Additional notes..."}
+                  value={formData.description}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Allow letters, numbers, spaces, and common punctuation, max 100 characters
+                    if (value.length <= 100) {
+                      setFormData({ ...formData, description: value })
+                    }
+                  }}
+                  className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
+                  rows={3}
+                />
+                {/* <p className="text-xs text-muted-foreground mt-1">
+                  {formData.description.length}/100 characters
+                </p> */}
+              </div>
+              {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
+              <div className="md:col-span-2 flex gap-2">
+                <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                  {isSubmitting ? "Saving..." : editingId ? "Update Expense" : "Add Expense"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setFormData({
+                      name: "",
+                      category: "Other",
+                      amount: 0,
+                      description: "",
+                      date: new Date().toISOString().split("T")[0],
+                      time: new Date().toTimeString().split(" ")[0],
+                    })
+                    setEditingId(null)
+                    setIsAdding(false)
+                    setError("")
+                  }}
+                  className="flex-1"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {/* Charts - Mobile Responsive */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8">
+          {chartData.length > 0 && (
+            <>
+              <Card className="p-4 sm:p-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Expenses by Category</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="var(--muted-foreground)" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={80}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis stroke="var(--muted-foreground)" tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="var(--primary)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+
+              <Card className="p-4 sm:p-6">
+                <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Distribution</h2>
+                <div className="space-y-3">
+                  {chartData.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: COLORS[chartData.indexOf(item) % COLORS.length] }}
+                        />
+                        <span className="font-medium text-sm">{item.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">RS {item.value.toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {totalExpenses > 0 ? ((item.value / totalExpenses) * 100).toFixed(1) : 0}%
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
+
+        {/* Filters - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:items-center">
+          <Input
+            type="text"
+            placeholder="Search by name or description..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full sm:max-w-md"
+          />
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full sm:w-auto border border-input rounded-lg p-2 bg-background text-foreground"
+          >
+            <option value="All">All Categories</option>
+            {EXPENSE_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+          <Button 
+            onClick={exportExpensesToPDF} 
+            disabled={filteredExpenses.length === 0}
+            className="w-full sm:w-auto"
+          >
+            Export PDF
+          </Button>
+        </div>
+
+        {/* Expenses Display - Mobile Cards & Desktop Table */}
+        {loading ? (
+          <Card className="p-12 text-center">
+            <p className="text-muted-foreground">Loading expenses...</p>
+          </Card>
+        ) : filteredExpenses.length === 0 ? (
+          <Card className="p-8 sm:p-12 text-center">
+            <p className="text-muted-foreground text-sm sm:text-base">
+              {expenses.length === 0
+                ? "No expenses recorded yet. Start by adding your first expense!"
+                : "No expenses match your filters."}
+            </p>
+          </Card>
+        ) : (
+          <>
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-4">
+              {filteredExpenses.map((expense) => (
+                <Card key={expense.id} className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{expense.name}</h3>
+                      <span className="inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        {expense.category}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Amount</div>
+                      <div className="font-bold text-lg text-primary">RS {expense.amount.toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    {expense.description && (
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Description:</span>
+                        <p className="text-sm mt-1">{expense.description}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Date:</span>
+                      <span>{expense.date?.toDate?.()?.toLocaleString() || "N/A"}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => handleEdit(expense)}
+                      className="flex-1"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                      onClick={() => handleDelete(expense.id, expense.name)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+
+              {/* Mobile Summary */}
+              <Card className="p-4 bg-muted/30">
+                <div className="space-y-2">
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Expenses:</span>
+                    <span>{filteredExpenses.length}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-primary text-lg pt-2 border-t">
+                    <span>Total Amount:</span>
+                    <span>RS {filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0).toFixed(2)}</span>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Desktop Table View */}
+            <Card className="hidden lg:block overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 font-semibold">Expense</th>
+                      <th className="text-left py-3 px-4 font-semibold">Category</th>
+                      <th className="text-left py-3 px-4 font-semibold">Date & Time</th>
+                      <th className="text-right py-3 px-4 font-semibold">Amount</th>
+                      <th className="text-left py-3 px-4 font-semibold">Description</th>
+                      <th className="text-center py-3 px-4 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredExpenses.map((expense, index) => (
+                      <tr 
+                        key={expense.id} 
+                        className={`border-b border-border hover:bg-muted/30 transition-colors ${
+                          index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
+                        }`}
+                      >
+                        <td className="py-3 px-4 font-medium">{expense.name}</td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                            {expense.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-xs text-muted-foreground">
+                            <div>{expense.date?.toDate?.().toLocaleDateString() || "N/A"}</div>
+                            <div className="text-[10px]">{expense.date?.toDate?.()?.toLocaleTimeString() || ""}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold">RS {expense.amount.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-xs text-muted-foreground line-clamp-1">{expense.description}</td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 bg-transparent hover:bg-red-50 dark:hover:bg-red-950"
+                              onClick={() => handleDelete(expense.id, expense.name)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/30 border-t-2 border-border">
+                    <tr>
+                      <td colSpan={3} className="py-3 px-4 font-semibold">
+                        Total ({filteredExpenses.length} expenses)
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-primary text-lg">
+                        RS {filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0).toFixed(2)}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
+          </>
+        )}
+      </main>
+    </>
+  )
+}
+
+export default function Expenses() {
+  return <ExpensesContent />
+}
