@@ -972,6 +972,7 @@ function SalesContent() {
                     placeholder="Search by user, item, purchaser, or description..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-11"
                   />
                 </div>
 

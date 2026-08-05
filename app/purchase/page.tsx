@@ -85,9 +85,8 @@ function PurchaseContent() {
 
   const [userId, setUserId] = useState<string | null>(null)
   
-  // Edit and Delete states
+  // Edit state
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   
   // Add to cart loading states
   const [isAddingToCart, setIsAddingToCart] = useState(false)
@@ -674,24 +673,6 @@ function PurchaseContent() {
     setSuccess("")
   }
 
-  const handleDeletePurchase = async (purchaseId: string) => {
-    if (!userId) return
-
-    try {
-      await deletePurchase(purchaseId, userId)
-      setSuccess("Purchase deleted successfully!")
-      setDeleteConfirmId(null)
-      
-      // Refresh purchases and items lists
-      await Promise.all([fetchPurchases(), fetchItems()])
-
-      setTimeout(() => setSuccess(""), 3000)
-    } catch (err) {
-      console.error("Error deleting purchase:", err)
-      setError("Failed to delete purchase")
-      setTimeout(() => setError(""), 3000)
-    }
-  }
 
   const exportPurchasesToPDF = () => {
     const doc = new jsPDF()
@@ -1406,7 +1387,7 @@ function PurchaseContent() {
                     placeholder="Search by ID, purchase number, item, or notes..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="text-sm"
+                    className="text-sm h-11"
                   />
                 </div>
 
@@ -1474,14 +1455,6 @@ function PurchaseContent() {
                             >
                               Edit
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="destructive"
-                              onClick={() => setDeleteConfirmId(purchase.id)}
-                              className="text-xs px-2 sm:px-3"
-                            >
-                              Delete
-                            </Button>
                           </div>
                         </div>
                       </div>
@@ -1522,35 +1495,6 @@ function PurchaseContent() {
                           <p className="text-xs sm:text-sm text-muted-foreground">
                             <strong>Notes:</strong> {purchase.notes}
                           </p>
-                        </div>
-                      )}
-
-                      {/* Delete Confirmation Dialog */}
-                      {deleteConfirmId === purchase.id && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                          <Card className="p-4 sm:p-6 max-w-md w-full">
-                            <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Confirm Delete</h3>
-                            <p className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6">
-                              Are you sure you want to delete this purchase? 
-                              This will also adjust the inventory quantities. This action cannot be undone.
-                            </p>
-                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                              <Button 
-                                variant="destructive" 
-                                onClick={() => handleDeletePurchase(purchase.id)}
-                                className="flex-1"
-                              >
-                                Delete
-                              </Button>
-                              <Button 
-                                variant="outline" 
-                                onClick={() => setDeleteConfirmId(null)}
-                                className="flex-1"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </Card>
                         </div>
                       )}
                     </Card>

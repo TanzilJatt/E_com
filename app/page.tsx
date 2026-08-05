@@ -166,22 +166,21 @@ function DashboardContent() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Search */}
             <div>
-              <label className="block text-sm font-medium mb-2">Search</label>
               <Input
                 type="text"
                 placeholder="Search by item name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-3 bg-background text-foreground transition-colors outline-none"
               />
             </div>
 
             {/* Sale Type Filter */}
             <div>
-              <label className="block text-sm font-medium mb-2">Sale Type</label>
               <select
                 value={saleTypeFilter}
                 onChange={(e) => setSaleTypeFilter(e.target.value as any)}
-                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-3 py-2 bg-background text-foreground transition-colors outline-none"
               >
                 <option value="all">All Types</option>
                 <option value="retail">Retail</option>
@@ -191,11 +190,10 @@ function DashboardContent() {
 
             {/* Payment Method Filter */}
             <div>
-              <label className="block text-sm font-medium mb-2">Payment Method</label>
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-3 py-2 bg-background text-foreground transition-colors outline-none"
               >
                 <option value="all">All Methods</option>
                 <option value="cash">Cash Only</option>

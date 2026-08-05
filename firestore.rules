@@ -67,7 +67,7 @@ service cloud.firestore {
     
     // Purchases collection - users can only access their own purchases
     match /purchases/{purchaseId} {
-      // Allow read if user is signed in and is the owner
+      // Allow read if user is signed in and is the owner, or if document doesn't exist yet (for list queries)
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
       
       // Allow create if user is signed in and userId is set to their uid
@@ -80,6 +80,11 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
       
       // Allow list operations for signed-in users
+      allow list: if isSignedIn();
+    }
+    
+    // Allow list operation on purchases collection root
+    match /purchases {
       allow list: if isSignedIn();
     }
     

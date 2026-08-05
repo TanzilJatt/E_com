@@ -446,6 +446,7 @@ function BalanceContent() {
                 placeholder="Search by item, SKU, or description..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-9"
               />
             </div>
             <div>

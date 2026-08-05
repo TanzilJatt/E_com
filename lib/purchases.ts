@@ -1,5 +1,5 @@
 import { db } from "./firebase"
-import { collection, addDoc, getDocs, getDoc, doc, updateDoc, query, where, orderBy, serverTimestamp, Timestamp, increment } from "firebase/firestore"
+import { collection, addDoc, getDocs, getDoc, doc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp, Timestamp, increment } from "firebase/firestore"
 
 export interface PurchaseItem {
   itemId: string
@@ -378,6 +378,8 @@ export async function deletePurchase(purchaseId: string, userId: string): Promis
     }
     
     const purchase = purchaseDoc.data() as Purchase
+    console.log("Purchase data before delete:", purchase)
+    console.log("Purchase userId:", purchase.userId, "Request userId:", userId)
     
     // Revert inventory quantities
     for (const item of purchase.items) {
@@ -392,12 +394,9 @@ export async function deletePurchase(purchaseId: string, userId: string): Promis
       }
     }
 
-    // Delete purchase record
-    await updateDoc(purchaseRef, {
-      deleted: true,
-      deletedAt: serverTimestamp(),
-      deletedBy: userId,
-    })
+    // Actually delete the purchase record
+    await deleteDoc(purchaseRef)
+    console.log("Purchase deleted successfully")
 
     // Log activity
     await addDoc(collection(db, "activityLogs"), {

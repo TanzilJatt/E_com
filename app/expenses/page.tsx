@@ -474,7 +474,7 @@ function ExpensesContent() {
             placeholder="Search by name or description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:max-w-md"
+            className="w-full sm:max-w-md h-9"
           />
           <select
             value={selectedCategory}
