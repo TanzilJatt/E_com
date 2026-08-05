@@ -46,6 +46,8 @@ function ItemsContent() {
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, errors: [] as string[] })
   const [showImportHelp, setShowImportHelp] = useState(false)
+  const [importErrors, setImportErrors] = useState<{ row: number; data: any; error: string }[]>([])
+  const [showImportErrors, setShowImportErrors] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Listen for auth state changes
@@ -195,6 +197,7 @@ function ItemsContent() {
 
     setIsImporting(true)
     setImportProgress({ current: 0, total: 0, errors: [] })
+    setImportErrors([])
 
     try {
       // Read the Excel file
@@ -216,6 +219,7 @@ function ItemsContent() {
 
       setImportProgress({ current: 0, total: jsonData.length, errors: [] })
       const errors: string[] = []
+      const detailedErrors: { row: number; data: any; error: string }[] = []
       let successCount = 0
       let updatedCount = 0
 
@@ -233,43 +237,51 @@ function ItemsContent() {
           const description = row.description || row.Description || ""
           const vendor = row.vendor || row.Vendor || ""
 
-          if (!name) {
+          if (!name || name.trim() === "") {
             errors.push(`Row ${rowNum}: Item name is required`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Item name is required" })
             continue
           }
 
-          if (sellingPrice < 0) {
-            errors.push(`Row ${rowNum}: Selling price must be positive`)
+          if (!sellingPrice || sellingPrice <= 0) {
+            errors.push(`Row ${rowNum}: Selling price is required and must be greater than 0`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Selling price is required and must be greater than 0" })
             continue
           }
 
-          if (actualPrice < 0) {
-            errors.push(`Row ${rowNum}: Actual price must be positive`)
+          if (!actualPrice || actualPrice < 0) {
+            errors.push(`Row ${rowNum}: Actual price is required and must be 0 or greater`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Actual price is required and must be 0 or greater" })
             continue
           }
 
           if (sellingPrice <= actualPrice) {
             errors.push(`Row ${rowNum}: Selling price must be greater than actual price`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Selling price must be greater than actual price" })
             continue
           }
 
-          if (quantity < 0) {
-            errors.push(`Row ${rowNum}: Quantity must be positive`)
+          if (!quantity || quantity < 0) {
+            errors.push(`Row ${rowNum}: Quantity is required and must be 0 or greater`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Quantity is required and must be 0 or greater" })
             continue
           }
 
           if (name.length > 30) {
             errors.push(`Row ${rowNum}: Name must be 30 characters or less`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Name must be 30 characters or less" })
             continue
           }
 
           if (vendor.length > 30) {
             errors.push(`Row ${rowNum}: Vendor name must be 30 characters or less`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Vendor name must be 30 characters or less" })
             continue
           }
 
           if (description.length > 100) {
             errors.push(`Row ${rowNum}: Description must be 100 characters or less`)
+            detailedErrors.push({ row: rowNum, data: row, error: "Description must be 100 characters or less" })
             continue
           }
 
@@ -366,9 +378,13 @@ function ItemsContent() {
           setImportProgress({ current: i + 1, total: jsonData.length, errors })
         } catch (err: any) {
           errors.push(`Row ${rowNum}: ${err.message || "Failed to add item"}`)
+          detailedErrors.push({ row: rowNum, data: row, error: err.message || "Failed to add item" })
           setImportProgress({ current: i + 1, total: jsonData.length, errors })
         }
       }
+
+      // Set detailed errors for display
+      setImportErrors(detailedErrors)
 
       // Refresh items list
       await fetchItems()
@@ -377,14 +393,15 @@ function ItemsContent() {
       const addedCount = successCount - updatedCount
       if (errors.length > 0) {
         setError(
-          `Import completed: ${addedCount} added, ${updatedCount} updated, ${errors.length} failed. Check console for details.`
+          `Import completed: ${addedCount} added, ${updatedCount} updated, ${errors.length} failed. Check error details below.`
         )
-        console.error("Import errors:", errors)
+        setShowImportErrors(true)
         toast.warning(`Import completed with some errors`, {
-          description: `${addedCount} added, ${updatedCount} updated, ${errors.length} failed. Check error list for details.`,
+          description: `${addedCount} added, ${updatedCount} updated, ${errors.length} failed. View error details for more information.`,
         })
       } else {
         setError("")
+        setShowImportErrors(false)
         if (updatedCount > 0) {
           toast.success(`Successfully processed ${successCount} items!`, {
             description: `${addedCount} new items added, ${updatedCount} quantities updated.`,
@@ -445,24 +462,30 @@ function ItemsContent() {
   const exportItemsToPDF = () => {
     const doc = new jsPDF()
     
-    // Add title
+    // Add title - centered
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const centerX = pageWidth / 2
+
     doc.setFontSize(18)
-    doc.text("Inventory Report", 14, 22)
+    const title = "Inventory Report"
+    doc.text(title, centerX, 22, { align: "center" })
     
-    // Add date and filter info
+    // Add date and filter info - centered
     doc.setFontSize(10)
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30)
+    const generatedText = `Generated: ${new Date().toLocaleString()}`
+    doc.text(generatedText, centerX, 30, { align: "center" })
     
+    let currentY = 36
     if (dateFilter.start && dateFilter.end) {
-      doc.text(
-        `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`,
-        14,
-        36
-      )
+      const dateRangeText = `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`
+      doc.text(dateRangeText, centerX, currentY, { align: "center" })
+      currentY += 6
     }
     
     if (searchTerm) {
-      doc.text(`Search: "${searchTerm}"`, 14, dateFilter.start && dateFilter.end ? 42 : 36)
+      const searchText = `Search: "${searchTerm}"`
+      doc.text(searchText, centerX, currentY, { align: "center" })
+      currentY += 6
     }
     
     // Prepare table data
@@ -483,35 +506,47 @@ function ItemsContent() {
       ]
     })
     
-    // Add table
-    const startY = searchTerm ? (dateFilter.start && dateFilter.end ? 48 : 42) : (dateFilter.start && dateFilter.end ? 42 : 36)
+    // Add table - centered
+    const startY = currentY + 6
+    const columnWidths = [22, 30, 25, 40, 20, 20, 18, 25]
+    const tableWidth = columnWidths.reduce((total, width) => total + width, 0)
+    const horizontalMargin = Math.max((pageWidth - tableWidth) / 2, 14)
+
     autoTable(doc, {
       startY,
       head: [["SKU", "Item Name", "Vendor", "Description", "Price", "Cost Price", "Quantity", "Total Value"]],
       body: tableData,
       theme: "grid",
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+      tableWidth: tableWidth <= pageWidth - 28 ? tableWidth : pageWidth - 28,
+      margin: { left: horizontalMargin, right: horizontalMargin },
+      styles: { fontSize: 8, cellPadding: 2, halign: "center" },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255, halign: "center" },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 40 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: 18 },
-        7: { cellWidth: 25 }
+        0: { cellWidth: 22, halign: "center" },
+        1: { cellWidth: 30, halign: "left" },
+        2: { cellWidth: 25, halign: "left" },
+        3: { cellWidth: 40, halign: "left" },
+        4: { cellWidth: 20, halign: "center" },
+        5: { cellWidth: 20, halign: "center" },
+        6: { cellWidth: 18, halign: "center" },
+        7: { cellWidth: 25, halign: "center" }
       }
     })
     
-    // Add summary
+    // Add summary - centered
     const finalY = (doc as any).lastAutoTable.finalY || startY
     doc.setFontSize(12)
-    doc.text(`Total Items: ${filteredItems.length}`, 14, finalY + 10)
+    
+    const totalItemsText = `Total Items: ${filteredItems.length}`
+    doc.text(totalItemsText, centerX, finalY + 10, { align: "center" })
+    
     const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
-    doc.text(`Total Quantity: ${totalQuantity} units`, 14, finalY + 18)
+    const totalQuantityText = `Total Quantity: ${totalQuantity} units`
+    doc.text(totalQuantityText, centerX, finalY + 18, { align: "center" })
+    
     const totalValue = filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0)
-    doc.text(`Total Inventory Value: RS ${totalValue.toFixed(2)}`, 14, finalY + 26)
+    const totalValueText = `Total Inventory Value: RS ${totalValue.toFixed(2)}`
+    doc.text(totalValueText, centerX, finalY + 26, { align: "center" })
     
     // Save PDF
     const fileName = `inventory-report-${new Date().toISOString().split("T")[0]}.pdf`
@@ -538,7 +573,7 @@ function ItemsContent() {
           </div>
           
           {/* Action Buttons - Mobile Responsive */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-2">
             <Button 
               variant="outline" 
               onClick={() => router.push("/balance")} 
@@ -687,6 +722,53 @@ function ItemsContent() {
           </Card>
         )}
 
+        {/* Import Error Details */}
+        {showImportErrors && importErrors.length > 0 && (
+          <Card className="p-4 sm:p-6 mb-6 sm:mb-8 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800">
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-lg sm:text-xl font-semibold text-red-800 dark:text-red-400">
+                Items That Failed to Import ({importErrors.length})
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowImportErrors(false)}>
+                ✕
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              The following items could not be imported. Please fix the errors in your Excel file and try again.
+            </p>
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-red-100 dark:bg-red-900/30">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-semibold">Row</th>
+                    <th className="text-left py-2 px-3 font-semibold">Item Name</th>
+                    <th className="text-left py-2 px-3 font-semibold">Error</th>
+                    <th className="text-left py-2 px-3 font-semibold">Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importErrors.map((error, index) => {
+                    const itemName = error.data?.name || error.data?.Name || error.data?.item_name || error.data?.["Item Name"] || "Unknown"
+                    return (
+                      <tr key={index} className="border-b border-red-200 dark:border-red-800">
+                        <td className="py-2 px-3 font-medium">{error.row}</td>
+                        <td className="py-2 px-3 font-semibold text-foreground">{itemName}</td>
+                        <td className="py-2 px-3 text-red-600 dark:text-red-400">{error.error}</td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">
+                          <details className="cursor-pointer">
+                            <summary className="hover:text-foreground">View data</summary>
+                            <pre className="mt-2 whitespace-pre-wrap break-all bg-muted p-2 rounded">{JSON.stringify(error.data, null, 2)}</pre>
+                          </details>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
         {isAdding && (
           <Card className="p-4 sm:p-6 mb-6 sm:mb-8">
             <h2 className="text-lg sm:text-xl font-semibold mb-4">{editingId ? "Edit Item" : "Add New Item"}</h2>
@@ -695,7 +777,7 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Item Name <span className="text-red-500">*</span></label>
                 <Input
                   type="text"
-                  placeholder={formData.name ? "" : "Product name "}
+                  placeholder="Product name"
                   value={formData.name}
                   onChange={(e) => {
                     const value = e.target.value
@@ -723,10 +805,10 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Selling Price (RS) *</label>
                 <Input
                   type="number"
-                  placeholder={formData.sellingPrice > 0 ? "" : "0.00"}
+                  placeholder="0.00"
                   step="0.01"
                   min="0"
-                  value={formData.sellingPrice || ""}
+                  value={formData.sellingPrice}
                   onChange={(e) => setFormData({ ...formData, sellingPrice: Number.parseFloat(e.target.value) || 0 })}
                   required
                 />
@@ -735,10 +817,10 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Actual Price (RS) *</label>
                 <Input
                   type="number"
-                  placeholder={formData.actualPrice > 0 ? "" : "0.00"}
+                  placeholder="0.00"
                   step="0.01"
                   min="0"
-                  value={formData.actualPrice || ""}
+                  value={formData.actualPrice}
                   onChange={(e) => setFormData({ ...formData, actualPrice: Number.parseFloat(e.target.value) || 0 })}
                   required
                 />
@@ -748,9 +830,9 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
                 <Input
                   type="number"
-                  placeholder={formData.quantity > 0 ? "" : "0"}
+                  placeholder="0"
                   min="0"
-                  value={formData.quantity || ""}
+                  value={formData.quantity}
                   onChange={(e) => setFormData({ ...formData, quantity: Number.parseInt(e.target.value) || 0 })}
                   required
                 />
@@ -759,7 +841,7 @@ function ItemsContent() {
                 <label className="block text-sm font-medium mb-1">Vendor Name <span className="text-red-500">*</span></label>
                 <Input
                   type="text"
-                  placeholder={formData.vendor ? "" : "Vendor name "}
+                  placeholder="Vendor name"
                   value={formData.vendor}
                   onChange={(e) => {
                     const value = e.target.value
@@ -768,10 +850,11 @@ function ItemsContent() {
                       setFormData({ ...formData, vendor: value })
                     }
                   }}
+                  required
                 />
-                {/* <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {formData.vendor.length}/30 characters (letters, numbers, and spaces only)
-                </p> */}
+                </p>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Description </label>
@@ -896,7 +979,7 @@ function ItemsContent() {
             placeholder="Search by name, SKU, ID, or vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:max-w-md"
+            className="w-full sm:max-w-md h-11"
           />
           <Button 
             onClick={exportItemsToPDF} 
