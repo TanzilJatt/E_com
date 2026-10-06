@@ -147,67 +147,46 @@ function DashboardContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="md:pl-64">
+      <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-2">Welcome back! Here's your inventory overview.</p>
         </div>
 
         {/* Filters */}
-        <Card className="p-6 mb-8">
-          <h2 className="text-lg font-semibold mb-4">Filter Dashboard Data</h2>
-
-          {/* Date Filter */}
-          <div className="mb-4">
-            <DateFilter onFilter={handleDateFilter} />
-          </div>
-
-          {/* Other Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Search */}
-            <div>
-              <Input
-                type="text"
-                placeholder="Search by item name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-3 bg-background text-foreground transition-colors outline-none"
-              />
-            </div>
-
-            {/* Sale Type Filter */}
-            <div>
-              <select
-                value={saleTypeFilter}
-                onChange={(e) => setSaleTypeFilter(e.target.value as any)}
-                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-3 py-2 bg-background text-foreground transition-colors outline-none"
-              >
-                <option value="all">All Types</option>
-                <option value="retail">Retail</option>
-                <option value="box">Box Purchase</option>
-              </select>
-            </div>
-
-            {/* Payment Method Filter */}
-            <div>
-              <select
-                value={paymentMethodFilter}
-                onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-                className="w-full h-11 border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-3 py-2 bg-background text-foreground transition-colors outline-none"
-              >
-                <option value="all">All Methods</option>
-                <option value="cash">Cash Only</option>
-                <option value="credit">Credit Only</option>
-                <option value="both">Both (Cash + Credit)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Filter Summary */}
-          <div className="mt-4 text-sm text-muted-foreground">
-            Showing {filteredSales.length} of {recentSales.length} recent sales
-          </div>
-        </Card>
+        <div className="flex items-center gap-2 flex-wrap mb-6">
+          <Input
+            type="text"
+            placeholder="Search item..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-9 w-48 text-sm"
+          />
+          <select
+            value={saleTypeFilter}
+            onChange={(e) => setSaleTypeFilter(e.target.value as any)}
+            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
+          >
+            <option value="all">All Types</option>
+            <option value="retail">Retail</option>
+            <option value="box">Box Purchase</option>
+          </select>
+          <select
+            value={paymentMethodFilter}
+            onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
+            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
+          >
+            <option value="all">All Methods</option>
+            <option value="cash">Cash Only</option>
+            <option value="credit">Credit Only</option>
+            <option value="both">Cash + Credit</option>
+          </select>
+          <DateFilter compact onFilter={handleDateFilter} />
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filteredSales.length} of {recentSales.length} sales
+          </span>
+        </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
@@ -379,6 +358,7 @@ function DashboardContent() {
           </Card>
         </div>
       </main>
+      </div>
     </>
   )
 }

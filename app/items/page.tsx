@@ -20,6 +20,9 @@ import { toast } from "sonner"
 import { FileSpreadsheet, Download, Upload, Info, Scale } from "lucide-react"
 import { useRouter } from "next/navigation"
 
+// Total stock in pieces (items without pieces per box count as 1 piece each)
+const getPieces = (item: Item) => item.quantity * (item.piecesPerBox || 1)
+
 function ItemsContent() {
   const router = useRouter()
   const [items, setItems] = useState<Item[]>([])
@@ -31,17 +34,14 @@ function ItemsContent() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: "",
-    sellingPrice: 0,
-    actualPrice: 0,
     quantity: 0,
+    piecesPerBox: 1,
     description: "",
     vendor: "",
   })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showPriceOverrideWarning, setShowPriceOverrideWarning] = useState(false)
-  const [sellingPriceOverrideConfirmed, setPriceOverrideConfirmed] = useState(false)
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, errors: [] as string[] })
@@ -127,32 +127,19 @@ function ItemsContent() {
     setIsSubmitting(true)
 
     try {
-      if (!formData.name || formData.sellingPrice < 0 || formData.quantity < 0) {
-        setError("Please fill in all required fields (Name, Price, Quantity)")
+      if (!formData.name || formData.quantity < 0 || formData.piecesPerBox < 1) {
+        setError("Please fill in all required fields (Name, Quantity)")
         setIsSubmitting(false)
         return
       }
-
-      // Validate that selling price is not below actual price (unless override is confirmed)
-      if (formData.sellingPrice < formData.actualPrice && !sellingPriceOverrideConfirmed) {
-        setShowPriceOverrideWarning(true)
-        setIsSubmitting(false)
-        return
-      }
-
-      // Reset override confirmation after successful submission
-      if (!sellingPriceOverrideConfirmed) {
-        setPriceOverrideConfirmed(false)
-      }
-
 
       if (editingId) {
-        await updateItem(editingId, formData, auth?.currentUser?.uid || "system", sellingPriceOverrideConfirmed)
+        await updateItem(editingId, formData, auth?.currentUser?.uid || "system")
       } else {
         await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
       }
 
-      setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
+      setFormData({ name: "", quantity: 0, piecesPerBox: 1, description: "", vendor: "" })
       setEditingId(null)
       setIsAdding(false)
       setError("")
@@ -168,9 +155,8 @@ function ItemsContent() {
   const handleEdit = (item: Item) => {
     setFormData({
       name: item.name,
-      sellingPrice: item.sellingPrice || item.price || 0,
-      actualPrice: item.actualPrice || item.costPrice || 0,
       quantity: item.quantity,
+      piecesPerBox: item.piecesPerBox || 1,
       description: item.description,
       vendor: item.vendor || "",
     })
@@ -230,34 +216,15 @@ function ItemsContent() {
 
         try {
           // Validate required fields
-          let name = row.name || row.Name || row.item_name || row["Item Name"] || ""
-          const sellingPrice = Number(row.sellingPrice || row.SellingPrice || row.price || row.Price || 0)
-          const actualPrice = Number(row.actualPrice || row.ActualPrice || row.costPrice || row.CostPrice || row.cost_price || 0)
+          const name = row.name || row.Name || row.item_name || row["Item Name"] || ""
           const quantity = Number(row.quantity || row.Quantity || 0)
+          const piecesPerBox = Math.max(1, Math.floor(Number(row.piecesPerBox || row.PiecesPerBox || 1) || 1))
           const description = row.description || row.Description || ""
           const vendor = row.vendor || row.Vendor || ""
 
           if (!name || name.trim() === "") {
             errors.push(`Row ${rowNum}: Item name is required`)
             detailedErrors.push({ row: rowNum, data: row, error: "Item name is required" })
-            continue
-          }
-
-          if (!sellingPrice || sellingPrice <= 0) {
-            errors.push(`Row ${rowNum}: Selling price is required and must be greater than 0`)
-            detailedErrors.push({ row: rowNum, data: row, error: "Selling price is required and must be greater than 0" })
-            continue
-          }
-
-          if (!actualPrice || actualPrice < 0) {
-            errors.push(`Row ${rowNum}: Actual price is required and must be 0 or greater`)
-            detailedErrors.push({ row: rowNum, data: row, error: "Actual price is required and must be 0 or greater" })
-            continue
-          }
-
-          if (sellingPrice <= actualPrice) {
-            errors.push(`Row ${rowNum}: Selling price must be greater than actual price`)
-            detailedErrors.push({ row: rowNum, data: row, error: "Selling price must be greater than actual price" })
             continue
           }
 
@@ -292,63 +259,32 @@ function ItemsContent() {
           )
 
           if (existingItem) {
-            // Item exists - check if sellingPrice matches
-            if (existingItem.sellingPrice === sellingPrice) {
-              // Same name and sellingPrice - update quantity (add to existing)
-              const newQuantity = existingItem.quantity + quantity
-              await updateItem(
-                existingItem.id,
-                { quantity: newQuantity },
-                auth?.currentUser?.uid || "system"
-              )
-              updatedCount++
-              successCount++
-              
-              // Update the currentItems array for subsequent checks
-              const itemIndex = currentItems.findIndex((item) => item.id === existingItem.id)
-              if (itemIndex !== -1) {
-                currentItems[itemIndex].quantity = newQuantity
-              }
-              
-              setImportProgress({ current: i + 1, total: jsonData.length, errors })
-              continue
-            } else {
-              // Same name but different sellingPrice - create new item with suffix
-              let suffix = 1
-              let newName = `${trimmedName}_${suffix}`
-              
-              // Keep incrementing suffix until we find an unused name
-              while (
-                currentItems.some(
-                  (item) => item.name.toLowerCase() === newName.toLowerCase()
-                ) &&
-                suffix < 100 // Safety limit
-              ) {
-                suffix++
-                newName = `${trimmedName}_${suffix}`
-              }
-              
-              if (suffix >= 100) {
-                errors.push(`Row ${rowNum}: Too many items with name "${trimmedName}"`)
-                continue
-              }
-              
-              if (newName.length > 30) {
-                errors.push(`Row ${rowNum}: Generated name "${newName}" exceeds 30 characters`)
-                continue
-              }
-              
-              name = newName
+            // Same name - add quantity to existing item
+            const newQuantity = existingItem.quantity + quantity
+            await updateItem(
+              existingItem.id,
+              { quantity: newQuantity },
+              auth?.currentUser?.uid || "system"
+            )
+            updatedCount++
+            successCount++
+
+            // Update the currentItems array for subsequent checks
+            const itemIndex = currentItems.findIndex((item) => item.id === existingItem.id)
+            if (itemIndex !== -1) {
+              currentItems[itemIndex].quantity = newQuantity
             }
+
+            setImportProgress({ current: i + 1, total: jsonData.length, errors })
+            continue
           }
 
           // Add new item to database
           const itemId = await addItem(
             {
               name: name.trim(),
-              sellingPrice,
-              actualPrice,
               quantity,
+              piecesPerBox,
               description: description.trim(),
               vendor: vendor.trim(),
             },
@@ -361,8 +297,6 @@ function ItemsContent() {
             currentItems.push({
               id: itemId,
               name: name.trim(),
-              sellingPrice,
-              actualPrice,
               quantity,
               description: description.trim(),
               vendor: vendor.trim(),
@@ -431,9 +365,8 @@ function ItemsContent() {
     const templateData = [
       {
         name: "Sample Item",
-        sellingPrice: 100.00,
-        actualPrice: 80.00,
         quantity: 50,
+        piecesPerBox: 12,
         description: "This is a sample item description",
         vendor: "Sample Vendor",
       },
@@ -446,9 +379,8 @@ function ItemsContent() {
     // Set column widths
     worksheet["!cols"] = [
       { wch: 30 }, // name
-      { wch: 15 }, // sellingPrice
-      { wch: 15 }, // actualPrice
       { wch: 10 }, // quantity
+      { wch: 12 }, // piecesPerBox
       { wch: 50 }, // description
       { wch: 30 }, // vendor
     ]
@@ -499,38 +431,31 @@ function ItemsContent() {
         item.name,
         item.vendor || "-",
         item.description || "-",
-        `RS ${(item.sellingPrice || item.price || 0).toFixed(2)}`,
-        ((item.actualPrice || item.costPrice || 0) > 0) ? `RS ${(item.actualPrice || item.costPrice || 0).toFixed(2)}` : "-",
         item.quantity.toString(),
-        `RS ${((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}`
+        getPieces(item).toString()
       ]
     })
     
     // Add table - centered
     const startY = currentY + 6
-    const columnWidths = [22, 30, 25, 40, 20, 20, 18, 25]
+    // Column widths (mm) must fit within the page minus 14mm margins on each side
+    const columnWidths = [24, 36, 34, 52, 18, 18]
+    const columnAligns: ("left" | "center")[] = ["center", "left", "left", "left", "center", "center"]
     const tableWidth = columnWidths.reduce((total, width) => total + width, 0)
     const horizontalMargin = Math.max((pageWidth - tableWidth) / 2, 14)
 
     autoTable(doc, {
       startY,
-      head: [["SKU", "Item Name", "Vendor", "Description", "Price", "Cost Price", "Quantity", "Total Value"]],
+      head: [["SKU", "Item Name", "Vendor", "Description", "Quantity", "Pieces"]],
       body: tableData,
       theme: "grid",
-      tableWidth: tableWidth <= pageWidth - 28 ? tableWidth : pageWidth - 28,
+      tableWidth,
       margin: { left: horizontalMargin, right: horizontalMargin },
-      styles: { fontSize: 8, cellPadding: 2, halign: "center" },
+      styles: { fontSize: 8, cellPadding: 2, halign: "center", overflow: "linebreak" },
       headStyles: { fillColor: [59, 130, 246], textColor: 255, halign: "center" },
-      columnStyles: {
-        0: { cellWidth: 22, halign: "center" },
-        1: { cellWidth: 30, halign: "left" },
-        2: { cellWidth: 25, halign: "left" },
-        3: { cellWidth: 40, halign: "left" },
-        4: { cellWidth: 20, halign: "center" },
-        5: { cellWidth: 20, halign: "center" },
-        6: { cellWidth: 18, halign: "center" },
-        7: { cellWidth: 25, halign: "center" }
-      }
+      columnStyles: Object.fromEntries(
+        columnWidths.map((width, i) => [i, { cellWidth: width, halign: columnAligns[i] }])
+      ),
     })
     
     // Add summary - centered
@@ -543,10 +468,10 @@ function ItemsContent() {
     const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
     const totalQuantityText = `Total Quantity: ${totalQuantity} units`
     doc.text(totalQuantityText, centerX, finalY + 18, { align: "center" })
+
+    const totalPieces = filteredItems.reduce((sum, item) => sum + getPieces(item), 0)
+    doc.text(`Total Pieces: ${totalPieces}`, centerX, finalY + 26, { align: "center" })
     
-    const totalValue = filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0)
-    const totalValueText = `Total Inventory Value: RS ${totalValue.toFixed(2)}`
-    doc.text(totalValueText, centerX, finalY + 26, { align: "center" })
     
     // Save PDF
     const fileName = `inventory-report-${new Date().toISOString().split("T")[0]}.pdf`
@@ -564,7 +489,8 @@ function ItemsContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <div className="md:pl-64">
+      <main className="w-full px-4 sm:px-6 lg:px-10 py-4 sm:py-8">
         {/* Header - Mobile Responsive */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
           <div>
@@ -652,8 +578,8 @@ function ItemsContent() {
                 <p className="text-muted-foreground mb-2">Your Excel file must have these columns:</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
                   <li><strong>name</strong> (required, max 30 chars) - Item name</li>
-                  <li><strong>sellingPrice</strong> (required, positive number) - Item sellingPrice</li>
                   <li><strong>quantity</strong> (required, positive number) - Stock quantity</li>
+                  <li><strong>piecesPerBox</strong> (optional, defaults to 1) - Pieces in each box</li>
                   <li><strong>description</strong> (optional, max 100 chars) - Item description</li>
                   <li><strong>vendor</strong> (optional, max 30 chars) - Vendor name</li>
                 </ul>
@@ -676,9 +602,7 @@ function ItemsContent() {
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-3 rounded-lg">
                 <p className="font-semibold mb-1">🔄 Duplicate Handling:</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2 text-xs">
-                  <li><strong>Same name + same sellingPrice:</strong> Quantity is added to existing item</li>
-                  <li><strong>Same name + different sellingPrice:</strong> New item created as "name_1", "name_2", etc.</li>
-                  <li>This prevents accidental overwrites while allowing stock updates</li>
+                  <li><strong>Same name as an existing item:</strong> Quantity is added to the existing item</li>
                 </ul>
               </div>
             </div>
@@ -802,31 +726,6 @@ function ItemsContent() {
               </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-1">Selling Price (RS) *</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                  value={formData.sellingPrice}
-                  onChange={(e) => setFormData({ ...formData, sellingPrice: Number.parseFloat(e.target.value) || 0 })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Actual Price (RS) *</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                  value={formData.actualPrice}
-                  onChange={(e) => setFormData({ ...formData, actualPrice: Number.parseFloat(e.target.value) || 0 })}
-                  required
-                />
-                <p className="text-xs text-muted-foreground mt-1">Selling price cannot be lower than actual price</p>
-              </div>
-              <div>
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
                 <Input
                   type="number"
@@ -836,6 +735,24 @@ function ItemsContent() {
                   onChange={(e) => setFormData({ ...formData, quantity: Number.parseInt(e.target.value) || 0 })}
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Pieces per Box *</label>
+                <Input
+                  type="number"
+                  placeholder="1"
+                  min="1"
+                  value={formData.piecesPerBox}
+                  onChange={(e) => setFormData({ ...formData, piecesPerBox: Number.parseInt(e.target.value) || 0 })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Quantity in Pieces</label>
+                <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted text-sm font-semibold">
+                  {formData.quantity * formData.piecesPerBox}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Quantity × Pieces per Box</p>
               </div>
               <div >
                 <label className="block text-sm font-medium mb-1">Vendor Name <span className="text-red-500">*</span></label>
@@ -877,71 +794,6 @@ function ItemsContent() {
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
               
-              {showPriceOverrideWarning && (
-                <div className="md:col-span-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="text-yellow-600 dark:text-yellow-400 mt-0.5">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
-                        Price Below Cost Warning
-                      </h4>
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-3">
-                        The selling price (RS {formData.sellingPrice.toFixed(2)}) is lower than the actual price (RS {formData.actualPrice.toFixed(2)}). This will result in a loss on each sale.
-                      </p>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={async () => {
-                            setPriceOverrideConfirmed(true)
-                            setShowPriceOverrideWarning(false)
-                            setIsSubmitting(true)
-                            try {
-                              if (editingId) {
-                                await updateItem(editingId, formData, auth?.currentUser?.uid || "system", true)
-                              } else {
-                                await addItem(formData, auth?.currentUser?.uid || "system", auth?.currentUser?.displayName || "System")
-                              }
-                              setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
-                              setEditingId(null)
-                              setIsAdding(false)
-                              setError("")
-                              setShowPriceOverrideWarning(false)
-                              await fetchItems()
-                            } catch (err: any) {
-                              console.error("[v0] Error:", err.message)
-                              setError(err.message || "Failed to save item")
-                            } finally {
-                              setIsSubmitting(false)
-                              setPriceOverrideConfirmed(false)
-                            }
-                          }}
-                          disabled={isSubmitting}
-                          className="bg-yellow-600 hover:bg-yellow-700 text-white"
-                        >
-                          {isSubmitting ? "Saving..." : "Override & Save"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setShowPriceOverrideWarning(false)
-                            setPriceOverrideConfirmed(false)
-                          }}
-                          disabled={isSubmitting}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
              
               <div className="md:col-span-2 flex gap-2">
                 <Button type="submit" className="flex-1" disabled={isSubmitting}>
@@ -951,12 +803,10 @@ function ItemsContent() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setFormData({ name: "", sellingPrice: 0, actualPrice: 0, quantity: 0, description: "", vendor: "" })
+                    setFormData({ name: "", quantity: 0, piecesPerBox: 1, description: "", vendor: "" })
                     setEditingId(null)
                     setIsAdding(false)
                     setError("")
-                    setShowPriceOverrideWarning(false)
-                    setPriceOverrideConfirmed(false)
                   }}
                   className="flex-1"
                   disabled={isSubmitting}
@@ -968,23 +818,21 @@ function ItemsContent() {
           </Card>
         )}
 
-        {/* Date Filter */}
-        <DateFilter onFilter={handleDateFilter} />
-
-        {/* Search */}
-        {/* Search and Export - Mobile Responsive */}
-        <div className="mb-6 flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
+        {/* Filters */}
+        <div className="mb-6 flex items-center gap-2 flex-wrap">
           <Input
             type="text"
-            placeholder="Search by name, SKU, ID, or vendor..."
+            placeholder="Search name, SKU, ID, vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:max-w-md h-11"
+            className="h-9 w-full sm:w-64 text-sm"
           />
-          <Button 
-            onClick={exportItemsToPDF} 
+          <DateFilter compact onFilter={handleDateFilter} />
+          <Button
+            size="sm"
+            className="h-9 ml-auto"
+            onClick={exportItemsToPDF}
             disabled={filteredItems.length === 0}
-            className="w-full sm:w-auto"
           >
             Export PDF
           </Button>
@@ -1017,6 +865,7 @@ function ItemsContent() {
                     <div className={`text-right ${item.quantity < 10 ? "text-red-600" : ""}`}>
                       <div className="text-xs text-muted-foreground">Stock</div>
                       <div className="font-semibold text-lg">{item.quantity}</div>
+                      <div className="text-xs text-muted-foreground">{getPieces(item)} pcs</div>
                     </div>
                   </div>
 
@@ -1033,20 +882,6 @@ function ItemsContent() {
                         <p className="text-sm mt-1">{item.description}</p>
                       </div>
                     )}
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Selling Price:</span>
-                      <span className="font-semibold">RS {(item.sellingPrice || item.price || 0).toFixed(2)}</span>
-                    </div>
-                    {((item.actualPrice || item.costPrice || 0) > 0) && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Actual Price:</span>
-                        <span className="font-semibold">RS {(item.actualPrice || item.costPrice || 0).toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm border-t pt-2">
-                      <span className="text-muted-foreground">Total Value:</span>
-                      <span className="font-bold text-primary">RS {((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}</span>
-                    </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>Created:</span>
                       <span>{item.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</span>
@@ -1089,9 +924,9 @@ function ItemsContent() {
                     <span>Total Units:</span>
                     <span>{filteredItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-primary text-lg pt-2 border-t">
-                    <span>Total Value:</span>
-                    <span>RS {filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0).toFixed(2)}</span>
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Pieces:</span>
+                    <span>{filteredItems.reduce((sum, item) => sum + getPieces(item), 0)}</span>
                   </div>
                 </div>
               </Card>
@@ -1107,10 +942,9 @@ function ItemsContent() {
                       <th className="text-left py-3 px-4 font-semibold text-sm">Item Name</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Selling Price</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Actual Price</th>
                       <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Total Value</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Pcs / Box</th>
+                      <th className="text-right py-3 px-4 font-semibold text-sm">Quantity in Pieces</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Last Updated</th>
                       <th className="text-center py-3 px-4 font-semibold text-sm">Actions</th>
@@ -1141,22 +975,15 @@ function ItemsContent() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <span className="font-semibold">RS {(item.sellingPrice || item.price || 0).toFixed(2)}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className="font-semibold text-muted-foreground">
-                            {((item.actualPrice || item.costPrice || 0) > 0) ? `RS ${(item.actualPrice || item.costPrice || 0).toFixed(2)}` : "—"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
                           <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
                             {item.quantity}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className="font-semibold text-primary">
-                            RS {((item.sellingPrice || item.price || 0) * item.quantity).toFixed(2)}
-                          </span>
+                        <td className="py-3 px-4 text-right text-sm text-muted-foreground">
+                          {item.piecesPerBox || 1}
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold">
+                          {getPieces(item)}
                         </td>
                         <td className="py-3 px-4">
                           <div className="text-xs text-muted-foreground">
@@ -1198,31 +1025,12 @@ function ItemsContent() {
                       <td colSpan={4} className="py-3 px-4 font-semibold">
                         Total ({filteredItems.length} items)
                       </td>
-                     <td className="py-3 px-4 text-right font-bold text-primary text-lg">
-  RS {filteredItems
-    .reduce((sum, item) => {
-      const price = Number(item.sellingPrice ?? item.price) || 0;
-      const qty = Number(item.quantity) || 0;
-
-      return sum + (price * qty);
-    }, 0)
-    .toFixed(2)}
-</td>
-                      <td className="py-3 px-4 text-right font-bold text-red-500">
-      RS {filteredItems
-        .reduce((sum, item) => {
-          const cost = Number(item.costPrice) || 0;
-          const qty = Number(item.quantity) || 0;
-          return sum + (cost * qty);
-        }, 0)
-        .toFixed(2)}
-    </td>
-              
                       <td className="py-3 px-4 text-right font-semibold">
                         {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-primary text-lg">
-                        RS {filteredItems.reduce((sum, item) => sum + ((item.sellingPrice || item.price || 0) * item.quantity), 0).toFixed(2)}
+                      <td></td>
+                      <td className="py-3 px-4 text-right font-semibold">
+                        {filteredItems.reduce((sum, item) => sum + getPieces(item), 0)} pcs
                       </td>
                       <td colSpan={3}></td>
                     </tr>
@@ -1233,6 +1041,7 @@ function ItemsContent() {
           </>
         )}
       </main>
+      </div>
     </>
   )
 }

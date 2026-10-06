@@ -18,12 +18,14 @@ export interface Item {
   id: string
   itemNumber?: number
   name: string
+  // Legacy price fields: items no longer have prices, but older records may still
+  // carry them (read-only, used by Balance/Reports for historical figures)
   sellingPrice?: number
   actualPrice?: number
-  // Backward compatibility with old field names
   price?: number
   costPrice?: number
   quantity: number
+  piecesPerBox?: number // Pieces in each unit of quantity (defaults to 1)
   sku: string
   description: string
   vendor?: string
@@ -100,8 +102,11 @@ async function generateNextSKU(): Promise<string> {
   }
 }
 
+// Fields that can be set when creating or editing an item (items have no prices)
+export type ItemInput = Pick<Item, "name" | "quantity" | "piecesPerBox" | "description" | "vendor">
+
 export async function addItem(
-  itemData: Omit<Item, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "sku" | "itemNumber">,
+  itemData: ItemInput,
   userId: string,
   userName: string,
 ): Promise<string | null> {
@@ -113,25 +118,16 @@ export async function addItem(
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
     
-    // MAIN VALIDATION: Selling price must be greater than actual price
-    if ((itemData.sellingPrice || itemData.price || 0) <= (itemData.actualPrice || itemData.costPrice || 0)) {
-      throw new Error("Selling price must be greater than actual price")
-    }
-    
     // Generate sequential item number
     const itemNumber = await getNextItemNumber(userId)
     console.log("✓ Generated item number:", itemNumber)
     
-    // Check if item with same name and sellingPrice exists
+    // If an item with the same name exists, add to its quantity instead of creating a new item
     const existingItems = await getItems(userId)
-    const trimmedName = itemData.name.trim()
-    const dataSellingPrice = itemData.sellingPrice || itemData.price || 0
-    const existingItem = existingItems.find(
-      (item) => item.name.toLowerCase() === trimmedName.toLowerCase() && (item.sellingPrice || item.price || 0) === dataSellingPrice
-    )
+    const finalName = itemData.name.trim()
+    const existingItem = existingItems.find((item) => item.name.toLowerCase() === finalName.toLowerCase())
 
     if (existingItem) {
-      // Same name and sellingPrice - update quantity instead of creating new item
       const newQuantity = existingItem.quantity + itemData.quantity
       await updateItem(existingItem.id, { quantity: newQuantity }, userId)
       console.log("✅ Item quantity updated successfully! Document ID:", existingItem.id)
@@ -139,55 +135,18 @@ export async function addItem(
       return existingItem.id
     }
 
-    // Check if item with same name but different sellingPrice exists
-    const sameNameDifferentPrice = existingItems.find(
-      (item) => item.name.toLowerCase() === trimmedName.toLowerCase() && (item.sellingPrice || item.price || 0) !== dataSellingPrice
-    )
-
-    let finalName = trimmedName
-    if (sameNameDifferentPrice) {
-      // Generate unique name with suffix
-      let suffix = 1
-      let newName = `${trimmedName}_${suffix}`
-      
-      // Keep incrementing suffix until we find an unused name
-      while (
-        existingItems.some(
-          (item) => item.name.toLowerCase() === newName.toLowerCase()
-        ) &&
-        suffix < 100 // Safety limit
-      ) {
-        suffix++
-        newName = `${trimmedName}_${suffix}`
-      }
-      
-      if (suffix >= 100) {
-        throw new Error(`Too many items with name "${trimmedName}"`)
-      }
-      
-      finalName = newName
-      console.log("✓ Generated unique name:", finalName)
-    }
-    
     // Auto-generate SKU
     const sku = await generateNextSKU()
     console.log("✓ Auto-generated SKU:", sku)
 
     console.log("✓ Adding item to Firestore...")
     
-    // Handle field name compatibility for both old and new names
-    const dbData: any = { ...itemData, name: finalName }
-    
-    // Map new field names to old ones for backward compatibility
-    if (itemData.sellingPrice !== undefined) {
-      dbData.price = itemData.sellingPrice
-    }
-    if (itemData.actualPrice !== undefined) {
-      dbData.costPrice = itemData.actualPrice
-    }
-    
     const docRef = await addDoc(collection(db, "items"), {
-      ...dbData,
+      name: finalName,
+      quantity: itemData.quantity,
+      piecesPerBox: itemData.piecesPerBox || 1,
+      description: itemData.description || "",
+      vendor: itemData.vendor || "",
       sku,
       itemNumber: itemNumber,
       createdAt: serverTimestamp(),
@@ -220,45 +179,18 @@ export async function addItem(
 
 export async function updateItem(
   itemId: string,
-  updates: Partial<Omit<Item, "id" | "createdAt" | "createdBy">>,
+  updates: Partial<ItemInput>,
   userId: string,
-  allowPriceBelowCost = false,
 ): Promise<void> {
   try {
     if (!db) {
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
     
-    // MAIN VALIDATION: Selling price must be greater than actual price (unless override is allowed)
-    if (!allowPriceBelowCost) {
-      const currentItems = await getItems(userId)
-      const currentItem = currentItems.find(item => item.id === itemId)
-      
-      if (currentItem) {
-        const newPrice = (updates.sellingPrice || updates.price) !== undefined ? (updates.sellingPrice || updates.price || 0) : (currentItem.sellingPrice || currentItem.price || 0)
-        const newActualPrice = (updates.actualPrice || updates.costPrice) !== undefined ? (updates.actualPrice || updates.costPrice || 0) : (currentItem.actualPrice || currentItem.costPrice || 0)
-        
-        if (newPrice <= newActualPrice) {
-          throw new Error("Selling price must be greater than actual price")
-        }
-      }
-    }
-    
     const itemRef = doc(db, "items", itemId)
-    
-    // Handle field name compatibility for both old and new names
-    const dbUpdates: any = { ...updates }
-    
-    // Map new field names to old ones for backward compatibility
-    if (updates.sellingPrice !== undefined) {
-      dbUpdates.price = updates.sellingPrice
-    }
-    if (updates.actualPrice !== undefined) {
-      dbUpdates.costPrice = updates.actualPrice
-    }
-    
+
     await updateDoc(itemRef, {
-      ...dbUpdates,
+      ...updates,
       updatedAt: serverTimestamp(),
       updatedBy: userId,
     })

@@ -1,5 +1,5 @@
 import { db } from "./firebase"
-import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, getDocs, query, orderBy, where, runTransaction, limit } from "firebase/firestore"
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, getDocs, query, orderBy, where, runTransaction, limit, increment } from "firebase/firestore"
 import { logActivity } from "./activity-logs"
 
 async function getNextSaleNumber(userId: string): Promise<number> {
@@ -85,6 +85,8 @@ export interface SaleItem {
   itemId: string
   itemName: string
   quantity: number
+  // "box" = quantity is in boxes and sellingPricePerUnit is per box (older sales omit this)
+  unit?: "box"
   sellingPricePerUnit: number
   cashPrice?: number
   creditPrice?: number
@@ -104,6 +106,7 @@ export interface Sale {
     creditAmount?: number
   }
   purchaserName?: string
+  customerId?: string // Linked customer (purchaserName holds their name at time of sale)
   description?: string
   userId: string
   userName: string
@@ -121,31 +124,6 @@ export async function createSale(
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
     
-    // DATABASE LEVEL ABSOLUTE VALIDATION: Check all items against item's regular selling price
-    const { getItems } = await import("./items")
-    const allItems = await getItems(userId)
-    
-    for (const saleItem of saleData.items) {
-      const item = allItems.find(i => i.id === saleItem.itemId)
-      if (item) {
-        const itemSellingPrice = item.sellingPrice || item.price || 0
-        console.log(`DATABASE CHECK: Item ${saleItem.itemName}, Selling price=${saleItem.sellingPricePerUnit}, Item selling price=${itemSellingPrice}`)
-        
-        // Check all price types against item's regular selling price
-        const pricesToCheck = []
-        if (saleItem.cashPrice) pricesToCheck.push({ type: 'Cash', price: saleItem.cashPrice })
-        if (saleItem.creditPrice) pricesToCheck.push({ type: 'Credit', price: saleItem.creditPrice })
-        pricesToCheck.push({ type: 'Base', price: saleItem.sellingPricePerUnit })
-        
-        for (const { type, price } of pricesToCheck) {
-          if (price < itemSellingPrice) {
-            console.log(`DATABASE BLOCK: ${type} price ${price} < item selling price ${itemSellingPrice}`)
-            throw new Error(`DATABASE FORBIDDEN: Item "${saleItem.itemName}" ${type} price (RS ${price.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). This sale is ABSOLUTELY FORBIDDEN!`)
-          }
-        }
-      }
-    }
-    
     // Generate sequential sale number
     const saleNumber = await getNextSaleNumber(userId)
     console.log("Generated sale number:", saleNumber)
@@ -161,6 +139,9 @@ export async function createSale(
         quantity: item.quantity,
         sellingPricePerUnit: item.sellingPricePerUnit,
         totalPrice: item.totalPrice,
+      }
+      if (item.unit !== undefined) {
+        cleanItem.unit = item.unit
       }
       if (item.cashPrice !== undefined) {
         cleanItem.cashPrice = item.cashPrice
@@ -197,6 +178,9 @@ export async function createSale(
     }
 
     // Add optional fields if provided
+    if (saleData.customerId) {
+      saleDoc.customerId = saleData.customerId
+    }
     if (saleData.purchaserName) {
       saleDoc.purchaserName = saleData.purchaserName
     }
@@ -236,6 +220,102 @@ export async function createSale(
     console.error("Error creating sale:", error)
     throw error
   }
+}
+
+// Total quantity per item id for a list of sale lines
+function quantitiesByItem(items: SaleItem[]): Record<string, number> {
+  const totals: Record<string, number> = {}
+  for (const item of items) totals[item.itemId] = (totals[item.itemId] || 0) + item.quantity
+  return totals
+}
+
+const cleanSaleItem = (item: SaleItem) => {
+  const cleanItem: any = {
+    itemId: item.itemId,
+    itemName: item.itemName,
+    quantity: item.quantity,
+    sellingPricePerUnit: item.sellingPricePerUnit,
+    totalPrice: item.totalPrice,
+  }
+  if (item.unit !== undefined) cleanItem.unit = item.unit
+  if (item.cashPrice !== undefined) cleanItem.cashPrice = item.cashPrice
+  if (item.creditPrice !== undefined) cleanItem.creditPrice = item.creditPrice
+  return cleanItem
+}
+
+// Update an existing sale. Stock is adjusted by the difference between the old and new lines.
+// Sale number and date are kept.
+export async function updateSale(
+  originalSale: Sale,
+  saleData: Pick<Sale, "items" | "totalAmount" | "paymentMethod" | "customerId" | "purchaserName" | "description">,
+): Promise<void> {
+  if (!db) {
+    throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+  }
+
+  const oldQty = quantitiesByItem(originalSale.items)
+  const newQty = quantitiesByItem(saleData.items)
+  const itemIds = new Set([...Object.keys(oldQty), ...Object.keys(newQty)])
+
+  // Make sure there is enough stock for any increase before changing anything
+  for (const itemId of itemIds) {
+    const extra = (newQty[itemId] || 0) - (oldQty[itemId] || 0)
+    if (extra <= 0) continue
+    const itemDoc = await getDoc(doc(db, "items", itemId))
+    const available = itemDoc.exists() ? itemDoc.data().quantity || 0 : 0
+    if (extra > available) {
+      const name = saleData.items.find((i) => i.itemId === itemId)?.itemName || "item"
+      throw new Error(`Not enough stock for ${name}. Only ${available} more available.`)
+    }
+  }
+
+  const paymentMethod: any = { cash: saleData.paymentMethod.cash, credit: saleData.paymentMethod.credit }
+  if (saleData.paymentMethod.cashAmount !== undefined) paymentMethod.cashAmount = saleData.paymentMethod.cashAmount
+  if (saleData.paymentMethod.creditAmount !== undefined) paymentMethod.creditAmount = saleData.paymentMethod.creditAmount
+
+  await updateDoc(doc(db, "sales", originalSale.id), {
+    items: saleData.items.map(cleanSaleItem),
+    totalAmount: saleData.totalAmount,
+    paymentMethod,
+    customerId: saleData.customerId || "",
+    purchaserName: saleData.purchaserName || "",
+    description: saleData.description || "",
+    updatedAt: serverTimestamp(),
+  })
+
+  for (const itemId of itemIds) {
+    const change = (oldQty[itemId] || 0) - (newQty[itemId] || 0) // positive = stock returned
+    if (change === 0) continue
+    const itemRef = doc(db, "items", itemId)
+    if ((await getDoc(itemRef)).exists()) {
+      await updateDoc(itemRef, { quantity: increment(change), updatedAt: serverTimestamp() })
+    }
+  }
+
+  await logActivity("SALE_UPDATED", `Updated sale #${originalSale.saleNumber || ""}`, {
+    saleId: originalSale.id,
+    changes: `Total: RS ${saleData.totalAmount}`,
+  })
+}
+
+// Delete a sale and return its quantities to stock
+export async function deleteSale(sale: Sale): Promise<void> {
+  if (!db) {
+    throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
+  }
+  await deleteDoc(doc(db, "sales", sale.id))
+
+  for (const [itemId, quantity] of Object.entries(quantitiesByItem(sale.items))) {
+    const itemRef = doc(db, "items", itemId)
+    if ((await getDoc(itemRef)).exists()) {
+      await updateDoc(itemRef, { quantity: increment(quantity), updatedAt: serverTimestamp() })
+    }
+  }
+
+  await logActivity("SALE_DELETED", `Deleted sale #${sale.saleNumber || ""}`, {
+    saleId: sale.id,
+    changes: `Total: RS ${sale.totalAmount}`,
+  })
 }
 
 export async function getSales(userId?: string, triggerMigration = false): Promise<Sale[]> {

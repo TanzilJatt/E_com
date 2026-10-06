@@ -15,6 +15,11 @@ export type ActivityAction =
   | "ITEM_UPDATED"
   | "ITEM_DELETED"
   | "SALE_COMPLETED"
+  | "SALE_UPDATED"
+  | "SALE_DELETED"
+  | "CUSTOMER_ADDED"
+  | "CUSTOMER_UPDATED"
+  | "CUSTOMER_DELETED"
   | "USER_LOGIN"
   | "USER_LOGOUT"
 
@@ -27,6 +32,7 @@ export interface ActivityLog {
   metadata?: {
     itemId?: string
     saleId?: string
+    customerId?: string
     changes?: string
   }
   timestamp: any

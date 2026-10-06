@@ -56,9 +56,15 @@ export default function ActivityLogsPage() {
       case "ITEM_UPDATED":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
       case "ITEM_DELETED":
+      case "SALE_DELETED":
         return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
       case "SALE_COMPLETED":
+      case "SALE_UPDATED":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+      case "CUSTOMER_ADDED":
+      case "CUSTOMER_UPDATED":
+      case "CUSTOMER_DELETED":
+        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
       case "USER_LOGIN":
         return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
       case "USER_LOGOUT":
@@ -71,7 +77,8 @@ export default function ActivityLogsPage() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="md:pl-64">
+      <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">Activity Logs</h1>
           <p className="text-muted-foreground mt-2">Track all system activities and changes</p>
@@ -95,6 +102,11 @@ export default function ActivityLogsPage() {
                 <option value="ITEM_UPDATED">Item Updated</option>
                 <option value="ITEM_DELETED">Item Deleted</option>
                 <option value="SALE_COMPLETED">Sale Completed</option>
+                <option value="SALE_UPDATED">Sale Updated</option>
+                <option value="SALE_DELETED">Sale Deleted</option>
+                <option value="CUSTOMER_ADDED">Customer Added</option>
+                <option value="CUSTOMER_UPDATED">Customer Updated</option>
+                <option value="CUSTOMER_DELETED">Customer Deleted</option>
                 <option value="USER_LOGIN">User Login</option>
                 <option value="USER_LOGOUT">User Logout</option>
               </select>
@@ -172,6 +184,7 @@ export default function ActivityLogsPage() {
           </Card>
         )}
       </main>
+      </div>
     </>
   )
 }

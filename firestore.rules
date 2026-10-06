@@ -88,6 +88,24 @@ service cloud.firestore {
       allow list: if isSignedIn();
     }
     
+    // Customers collection - users can only access their own customers
+    match /customers/{customerId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // Customer payments - money received against customer credit balances
+    match /customerPayments/{paymentId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
     // Activity logs - users can only read their own logs
     match /activityLogs/{logId} {
       // Allow read if user is signed in and is the owner

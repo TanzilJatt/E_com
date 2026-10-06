@@ -257,37 +257,29 @@ function ReportsContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="md:pl-64">
+      <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">Sales Reports</h1>
           <p className="text-muted-foreground mt-2">Analyze your sales performance</p>
         </div>
 
-        {/* Date Filter */}
-        <DateFilter onFilter={handleDateFilter} />
-
-        {/* Additional Filters */}
-        <Card className="p-4 mb-6">
-          <div className="flex  gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium mb-2">Sale Type</label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value as "all" | "box" | "retail")}
-                className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
-              >
-                <option value="all">All Sales</option>
-                <option value="retail">Retail Only</option>
-                <option value="box">Box Purchase Only</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button onClick={exportReportToPDF} disabled={filteredSales.length === 0}>
-                Export PDF
-              </Button>
-            </div>
-          </div>
-        </Card>
+        {/* Filters */}
+        <div className="mb-6 flex items-center gap-2 flex-wrap">
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as "all" | "box" | "retail")}
+            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
+          >
+            <option value="all">All Sales</option>
+            <option value="retail">Retail Only</option>
+            <option value="box">Box Purchase Only</option>
+          </select>
+          <DateFilter compact onFilter={handleDateFilter} />
+          <Button size="sm" className="h-9 ml-auto" onClick={exportReportToPDF} disabled={filteredSales.length === 0}>
+            Export PDF
+          </Button>
+        </div>
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
@@ -412,6 +404,7 @@ function ReportsContent() {
           </div>
         </Card>
       </main>
+      </div>
     </>
   )
 }

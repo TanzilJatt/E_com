@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,9 +19,13 @@ export type DatePreset =
 interface DateFilterProps {
   onFilter: (startDate: Date | null, endDate: Date | null, preset: DatePreset) => void
   showPresets?: boolean
+  // Extra filter controls shown in the same row, before the date selector
+  children?: ReactNode
+  // Inline, label-less variant for tight toolbars
+  compact?: boolean
 }
 
-export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
+export function DateFilter({ onFilter, showPresets = true, children, compact = false }: DateFilterProps) {
   const [preset, setPreset] = useState<DatePreset>("this_month")
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
@@ -150,10 +154,61 @@ export function DateFilter({ onFilter, showPresets = true }: DateFilterProps) {
     }
   }
 
+  if (compact) {
+    const compactControl = "h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        {children}
+        <select
+          value={preset}
+          onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
+          className={compactControl}
+          title={getDateRangeText(preset)}
+        >
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this_week">This Week</option>
+          <option value="last_week">Last Week</option>
+          <option value="this_month">This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="this_year">This Year</option>
+          <option value="last_year">Last Year</option>
+          <option value="custom">Custom Range</option>
+        </select>
+        {preset === "custom" && (
+          <>
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className={compactControl}
+              aria-label="Start date"
+            />
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              min={customStart}
+              className={compactControl}
+              aria-label="End date"
+            />
+            <Button size="sm" className="h-9" onClick={handleCustomFilter} disabled={!customStart || !customEnd}>
+              Apply
+            </Button>
+          </>
+        )}
+        <Button size="sm" variant="ghost" className="h-9" onClick={handleClearFilter}>
+          Clear
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <Card className="p-4 mb-6">
       <div className="space-y-4">
         <div className="flex items-end gap-4 flex-wrap">
+          {children}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium mb-2">Filter by Date</label>
             <select

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
@@ -8,11 +8,33 @@ import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createSale, getSales, type SaleItem, type Sale } from "@/lib/sales"
+import { createSale, getSales, updateSale, deleteSale, type SaleItem, type Sale } from "@/lib/sales"
 import type { Item } from "@/lib/items"
+import { getCustomers, saveCustomerItemPrices, type Customer } from "@/lib/customers"
+import { AddCustomerDialog } from "@/components/add-customer-dialog"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+
+// Older box sales stored quantity in pieces, with 12 pieces per box
+const LEGACY_BOX_SIZE = 12
+
+// Boxes and price per box for a sale line, handling older sales saved in pieces
+const getBoxInfo = (sale: Sale, item: SaleItem) => {
+  const unitPrice = item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
+  if (item.unit === "box") return { boxes: item.quantity, boxPrice: unitPrice }
+  if (sale.type === "box") return { boxes: item.quantity / LEGACY_BOX_SIZE, boxPrice: unitPrice * LEGACY_BOX_SIZE }
+  return null // old retail sale: quantity is in pieces
+}
 
 function SalesContent() {
   // View state
@@ -22,18 +44,23 @@ function SalesContent() {
   
   // Record Sale State
   const [items, setItems] = useState<Item[]>([])
-  const [saleType, setSaleType] = useState<"box" | "retail">("retail")
   const [cart, setCart] = useState<SaleItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState("")
   const [quantity, setQuantity] = useState<number | "">("")
-  const [sellingPricePerItem, setPricePerItem] = useState<number | "">("")
+  const [pricePerBox, setPricePerBox] = useState<number | "">("")
   const [cashPrice, setCashPrice] = useState<number | "">("")
   const [creditPrice, setCreditPrice] = useState<number | "">("")
   const [paymentCash, setPaymentCash] = useState(true)
   const [paymentCredit, setPaymentCredit] = useState(false)
   const [cashAmount, setCashAmount] = useState<number | "">("")
   const [creditAmount, setCreditAmount] = useState<number | "">("")
-  const [purchaserName, setPurchaserName] = useState("")
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [selectedCustomerId, setSelectedCustomerId] = useState("")
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false)
+  // Sale being edited (null when recording a new sale)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  // Set while loading a sale for editing so its saved cash/credit split isn't overwritten
+  const keepPaymentRef = useRef(false)
   const [description, setDescription] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -43,8 +70,8 @@ function SalesContent() {
   const [sales, setSales] = useState<Sale[]>([])
   const [filteredSales, setFilteredSales] = useState<Sale[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "box">("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
+  const [customerFilter, setCustomerFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
   const [loading, setLoading] = useState(false)
 
@@ -73,8 +100,31 @@ function SalesContent() {
     if (authReady && currentUserId) {
       fetchItems()
       fetchSales()
+      fetchCustomers()
     }
   }, [authReady, currentUserId])
+
+  const fetchCustomers = async () => {
+    try {
+      if (!currentUserId) return
+      setCustomers(await getCustomers(currentUserId))
+    } catch (error) {
+      console.error("Error fetching customers:", error)
+    }
+  }
+
+  // Boxes available for an item; when editing, the boxes already in that sale count as available
+  const getAvailable = (item: Item) =>
+    item.quantity +
+    (editingSale?.items.filter((i) => i.itemId === item.id).reduce((sum, i) => sum + i.quantity, 0) || 0)
+
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId)
+  const customerPrice = selectedCustomer && selectedItemId ? selectedCustomer.itemPrices?.[selectedItemId] : undefined
+
+  // Fill in the customer's agreed price when the customer or item changes
+  useEffect(() => {
+    if (customerPrice !== undefined) setPricePerBox(customerPrice)
+  }, [selectedCustomerId, selectedItemId, customerPrice])
 
   const fetchItems = async () => {
     try {
@@ -86,9 +136,7 @@ function SalesContent() {
       const { getItems } = await import("@/lib/items")
       const itemsList = await getItems(currentUserId)
       
-      // Filter items with quantity > 0
-      const availableItems = itemsList.filter((item) => item.quantity > 0)
-      setItems(availableItems)
+      setItems(itemsList)
     } catch (error) {
       console.error("Error fetching items:", error)
     }
@@ -130,9 +178,12 @@ function SalesContent() {
       index === self.findIndex((s) => s.id === sale.id)
     )
 
-    // Sale type filter
-    if (saleTypeFilter !== "all") {
-      filtered = filtered.filter((sale) => sale.type === saleTypeFilter)
+
+    // Customer filter
+    if (customerFilter === "none") {
+      filtered = filtered.filter((sale) => !sale.customerId)
+    } else if (customerFilter !== "all") {
+      filtered = filtered.filter((sale) => sale.customerId === customerFilter)
     }
 
     // Payment method filter
@@ -161,7 +212,7 @@ function SalesContent() {
     }
 
     setFilteredSales(filtered)
-  }, [sales, searchTerm, saleTypeFilter, paymentMethodFilter, dateFilter])
+  }, [sales, searchTerm, paymentMethodFilter, customerFilter, dateFilter])
 
   const handleAddToCart = () => {
     setError("")
@@ -171,8 +222,8 @@ function SalesContent() {
     }
 
     // Validate that sellingPrice is entered
-    if (sellingPricePerItem === "" || sellingPricePerItem <= 0) {
-      setError("Please enter a valid sellingPrice per item")
+    if (pricePerBox === "" || pricePerBox <= 0) {
+      setError("Please enter a valid price per box")
       return
     }
 
@@ -182,61 +233,21 @@ function SalesContent() {
       return
     }
 
-    // Calculate actual quantity and pricing based on sale type
-    let qty = typeof quantity === 'number' ? quantity : 0
-    let actualQuantity = qty
-    let sellingPricePerUnit = typeof sellingPricePerItem === 'number' ? sellingPricePerItem : 0
-    let totalPrice = 0
-    
-    if (saleType === "box") {
-      // Box purchase: multiply quantity by 12 for inventory deduction
-      // User enters number of boxes and sellingPrice per item
-      actualQuantity = qty * 12
-      sellingPricePerUnit = sellingPricePerItem
-      // Total is actual items × sellingPrice per item
-      totalPrice = actualQuantity * sellingPricePerUnit
-    } else {
-      // Retail: quantity and sellingPrice are straightforward
-      totalPrice = actualQuantity * sellingPricePerUnit
-    }
+    // Item quantity is counted in boxes, so boxes are deducted from stock directly
+    const boxes = typeof quantity === 'number' ? quantity : 0
+    const boxPrice = typeof pricePerBox === 'number' ? pricePerBox : 0
+    const actualQuantity = boxes
+    const totalPrice = boxes * boxPrice
+    const sellingPricePerUnit = boxPrice
 
-    // Check stock with actual quantity
-    if (actualQuantity > item.quantity) {
-      setError(`Not enough stock available. Available: ${item.quantity} items${saleType === "box" ? ` (${Math.floor(item.quantity / 12)} boxes)` : ""}`)
+    if (actualQuantity > getAvailable(item)) {
+      setError(`Not enough stock available. Available: ${getAvailable(item)} boxes`)
       return
     }
-
-    // ABSOLUTE PRICE VALIDATION: Selling price MUST be equal to or greater than item's regular selling price
-    const itemSellingPrice = item.sellingPrice || item.price || 0
-    console.log(`PRICE VALIDATION: Selling price=${sellingPricePerUnit}, Item selling price=${itemSellingPrice}`)
-    
-    // Validate base price - must be equal to or greater than item's regular selling price
-    if (sellingPricePerUnit < itemSellingPrice) {
-      setError(`🚫 FORBIDDEN: Selling price (RS ${sellingPricePerUnit.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
-      return
-    }
-    
-    // Validate cash price if set
-    if (typeof cashPrice === 'number' && cashPrice > 0) {
-      if (cashPrice < itemSellingPrice) {
-        setError(`🚫 FORBIDDEN: Cash price (RS ${cashPrice.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
-        return
-      }
-    }
-    
-    // Validate credit price if set
-    if (typeof creditPrice === 'number' && creditPrice > 0) {
-      if (creditPrice < itemSellingPrice) {
-        setError(`🚫 FORBIDDEN: Credit price (RS ${creditPrice.toFixed(2)}) is LESS than item selling price (RS ${itemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
-        return
-      }
-    }
-    
-    console.log(`VALIDATION PASSED: Selling price ${sellingPricePerUnit} > item selling price ${itemSellingPrice}`)
 
     const existingItem = cart.find((c) => c.itemId === selectedItemId)
     if (existingItem) {
-      if (existingItem.quantity + actualQuantity > item.quantity) {
+      if (existingItem.quantity + actualQuantity > getAvailable(item)) {
         setError("Not enough stock available")
         return
       }
@@ -251,6 +262,7 @@ function SalesContent() {
           itemId: selectedItemId,
           itemName: item.name,
           quantity: actualQuantity,
+          unit: "box",
           sellingPricePerUnit: sellingPricePerUnit,
           cashPrice: undefined,
           creditPrice: undefined,
@@ -261,7 +273,7 @@ function SalesContent() {
 
     setSelectedItemId("")
     setQuantity("")
-    setPricePerItem("")
+    setPricePerBox("")
   }
 
   const handleRemoveFromCart = (itemId: string) => {
@@ -284,26 +296,10 @@ function SalesContent() {
       return
     }
 
-    // FINAL ABSOLUTE VALIDATION: Check all cart items against item's regular selling price
-    for (const cartItem of cart) {
-      const currentItem = items.find(i => i.id === cartItem.itemId)
-      if (currentItem) {
-        const currentItemSellingPrice = currentItem.sellingPrice || currentItem.price || 0
-        console.log(`FINAL VALIDATION: Item ${cartItem.itemName}, Selling price=${cartItem.sellingPricePerUnit}, Item selling price=${currentItemSellingPrice}`)
-        
-        // Check all possible price fields
-        const pricesToCheck = []
-        if (cartItem.cashPrice) pricesToCheck.push({ type: 'Cash', price: cartItem.cashPrice })
-        if (cartItem.creditPrice) pricesToCheck.push({ type: 'Credit', price: cartItem.creditPrice })
-        pricesToCheck.push({ type: 'Base', price: cartItem.sellingPricePerUnit })
-        
-        for (const { type, price } of pricesToCheck) {
-          if (price < currentItemSellingPrice) {
-            setError(`🚫 ABSOLUTE FORBIDDEN: Item "${cartItem.itemName}" ${type} price (RS ${price.toFixed(2)}) is LESS than item selling price (RS ${currentItemSellingPrice.toFixed(2)}). You MUST sell at or above the item's regular selling price!`)
-            return
-          }
-        }
-      }
+    // Every sale is recorded against a customer so it appears in their ledger
+    if (!selectedCustomer) {
+      setError("Please select a customer for this sale")
+      return
     }
 
     const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0)
@@ -329,37 +325,60 @@ function SalesContent() {
     setIsLoading(true)
 
     try {
-      const saleId = await createSale(
-        {
-          type: saleType,
-          items: cart,
-          totalAmount,
-          paymentMethod: {
-            cash: paymentCash,
-            credit: paymentCredit,
-            cashAmount: finalCashAmount,
-            creditAmount: finalCreditAmount,
-          },
-          purchaserName: purchaserName || undefined,
-          description: description || undefined,
-          userId: "",
-          userName: "",
+      const saleData = {
+        type: "box" as const,
+        items: cart,
+        totalAmount,
+        paymentMethod: {
+          cash: paymentCash,
+          credit: paymentCredit,
+          cashAmount: finalCashAmount,
+          creditAmount: finalCreditAmount,
         },
-        auth?.currentUser?.uid || "system",
-        auth?.currentUser?.displayName || "System",
-      )
+        customerId: selectedCustomer?.id,
+        purchaserName: selectedCustomer?.name,
+        description: description || undefined,
+      }
+      let saleId: string | null
+      if (editingSale) {
+        await updateSale(editingSale, saleData)
+        saleId = editingSale.id
+      } else {
+        saleId = await createSale(
+          { ...saleData, userId: "", userName: "" },
+          auth?.currentUser?.uid || "system",
+          auth?.currentUser?.displayName || "System",
+        )
+      }
 
       if (saleId) {
-        setSuccess(`Sale completed successfully! Transaction ID: ${saleId}`)
+        // Remember the prices used so they are filled in next time for this customer
+        if (selectedCustomer) {
+          try {
+            await saveCustomerItemPrices(
+              selectedCustomer.id,
+              Object.fromEntries(cart.filter((c) => c.unit === "box").map((c) => [c.itemId, c.sellingPricePerUnit]))
+            )
+            fetchCustomers()
+          } catch (priceError) {
+            console.error("Error saving customer prices:", priceError)
+          }
+        }
+        setSuccess(
+          editingSale
+            ? `Sale #${(editingSale.saleNumber || 0).toString().padStart(4, "0")} updated successfully!`
+            : `Sale completed successfully! Transaction ID: ${saleId}`
+        )
+        setEditingSale(null)
         setCart([])
         setSelectedItemId("")
         setQuantity("")
-        setPricePerItem("")
+        setPricePerBox("")
         setPaymentCash(true)
         setPaymentCredit(false)
         setCashAmount("")
         setCreditAmount("")
-        setPurchaserName("")
+        setSelectedCustomerId("")
         setDescription("")
         fetchItems()
         fetchSales() // Refresh sales list
@@ -384,6 +403,10 @@ function SalesContent() {
 
   // Auto-fill cash amount with grand total when cart changes
   useEffect(() => {
+    if (keepPaymentRef.current) {
+      keepPaymentRef.current = false
+      return
+    }
     if (cart.length > 0 && grandTotal > 0) {
       setCashAmount(grandTotal)
       setPaymentCash(true)
@@ -425,6 +448,61 @@ function SalesContent() {
     }
   }, [cashAmount, grandTotal])
 
+  const resetSaleForm = () => {
+    keepPaymentRef.current = false
+    setCart([])
+    setSelectedItemId("")
+    setQuantity("")
+    setPricePerBox("")
+    setPaymentCash(true)
+    setPaymentCredit(false)
+    setCashAmount("")
+    setCreditAmount("")
+    setSelectedCustomerId("")
+    setDescription("")
+    setError("")
+    setSuccess("")
+  }
+
+  const handleBackToList = () => {
+    if (editingSale) {
+      setEditingSale(null)
+      resetSaleForm()
+    }
+    setActiveView("list")
+  }
+
+  // Only sales recorded in boxes (with the box marker) can be edited
+  const canEditSale = (sale: Sale) => sale.items.length > 0 && sale.items.every((item) => item.unit === "box")
+
+  const handleEditSale = (sale: Sale) => {
+    resetSaleForm()
+    keepPaymentRef.current = true
+    setEditingSale(sale)
+    setCart(sale.items.map((item) => ({ ...item })))
+    setSelectedCustomerId(sale.customerId || "")
+    setDescription(sale.description || "")
+    setPaymentCash(!!sale.paymentMethod?.cash)
+    setPaymentCredit(!!sale.paymentMethod?.credit)
+    // Cash is always a number here: an empty cash field would make the auto-fill clear the credit amount
+    setCashAmount(sale.paymentMethod?.cash ? sale.paymentMethod.cashAmount || 0 : 0)
+    setCreditAmount(sale.paymentMethod?.credit ? sale.paymentMethod.creditAmount || 0 : "")
+    setActiveView("record")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const handleDeleteSale = async (sale: Sale) => {
+    const label = `#${(sale.saleNumber || 0).toString().padStart(4, "0")}`
+    if (!confirm(`Delete sale ${label}${sale.purchaserName ? ` for ${sale.purchaserName}` : ""}? Its items will be returned to stock.`)) return
+    try {
+      await deleteSale(sale)
+      toast.success(`Sale ${label} deleted`)
+      await Promise.all([fetchSales(), fetchItems()])
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete sale")
+    }
+  }
+
   const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
     setDateFilter({ start, end })
   }
@@ -450,7 +528,8 @@ function SalesContent() {
     
     // Add filter info
     let filterInfo = []
-    if (saleTypeFilter !== "all") filterInfo.push(`Type: ${saleTypeFilter}`)
+    if (customerFilter === "none") filterInfo.push("Customer: None")
+    else if (customerFilter !== "all") filterInfo.push(`Customer: ${customers.find((c) => c.id === customerFilter)?.name || "Unknown"}`)
     if (paymentMethodFilter !== "all") filterInfo.push(`Payment: ${paymentMethodFilter}`)
     if (searchTerm) filterInfo.push(`Search: "${searchTerm}"`)
     if (filterInfo.length > 0) {
@@ -470,6 +549,10 @@ function SalesContent() {
         const unitPrice = item.sellingPricePerUnit || 0
         const totalPrice = unitPrice * item.quantity
         const priceInfo = sellingPrices.length > 0 ? ` - ${sellingPrices.join(", ")}` : ""
+        const boxInfo = getBoxInfo(sale, item)
+        if (boxInfo) {
+          return `${item.itemName} (${boxInfo.boxes} boxes @ RS ${boxInfo.boxPrice.toFixed(2)} per box = RS ${totalPrice.toFixed(2)})${priceInfo}`
+        }
         return `${item.itemName} (x${item.quantity} @ RS ${unitPrice.toFixed(2)} each = RS ${totalPrice.toFixed(2)})${priceInfo}`
       }).join("\n")
       
@@ -499,7 +582,7 @@ function SalesContent() {
     // Add table
     autoTable(doc, {
       startY: filterInfo.length > 0 ? 42 : 36,
-      head: [["#", "Date", "Type", "Purchaser", "Description", "Items", "Payment", "Total"]],
+      head: [["#", "Date", "Type", "Customer", "Description", "Items", "Payment", "Total"]],
       body: tableData,
       theme: "grid",
       styles: { fontSize: 7, cellPadding: 1.5 },
@@ -532,11 +615,13 @@ function SalesContent() {
     return (
       <>
         <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="md:pl-64">
+        <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
         </main>
+        </div>
       </>
     )
   }
@@ -545,11 +630,13 @@ function SalesContent() {
     return (
       <>
         <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="md:pl-64">
+        <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
           <div className="text-center py-8">
             <p className="text-muted-foreground">Please log in to access sales.</p>
           </div>
         </main>
+        </div>
       </>
     )
   }
@@ -557,7 +644,8 @@ function SalesContent() {
   return (
     <>
       <Navbar />
-      <main className="container mx-auto p-3 sm:p-6 max-w-7xl">
+      <div className="md:pl-64">
+      <main className="w-full p-3 sm:p-6 lg:px-10">
         {/* Header */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -585,68 +673,61 @@ function SalesContent() {
             <div className="mb-6">
               <Button
                 variant="ghost"
-                onClick={() => setActiveView("list")}
+                onClick={handleBackToList}
                 className="gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
-                Back to Sales
+                {editingSale ? "Cancel Edit" : "Back to Sales"}
               </Button>
             </div>
 
-        {/* Sale Type Selector */}
-        <Card className="p-4 sm:p-6 mb-4 sm:mb-8">
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                value="retail"
-                checked={saleType === "retail"}
-                onChange={(e) => setSaleType(e.target.value as "retail" | "box")}
-              />
-              <span>Retail</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                value="box"
-                checked={saleType === "box"}
-                onChange={(e) => setSaleType(e.target.value as "retail" | "box")}
-              />
-              <span>Box Purchase</span>
-            </label>
-          </div>
-          
-          {saleType === "box" && (
-            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-300">
-                ℹ️ <strong>Box Purchase:</strong> Enter the number of boxes and sellingPrice per item. Each box contains 12 items. The system will automatically deduct the correct quantity from inventory (e.g., 5 boxes = 60 items deducted).
-              </p>
-            </div>
-          )}
-        </Card> 
+            {editingSale && (
+              <Card className="p-4 mb-4 sm:mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  <strong>Editing Sale #{(editingSale.saleNumber || 0).toString().padStart(4, "0")}</strong> — change the
+                  customer, items or payment, then click Update Sale. Stock is adjusted by the difference.
+                </p>
+              </Card>
+            )}
 
-        {/* Purchaser Information */}
+        <AddCustomerDialog
+          open={isAddCustomerOpen}
+          onOpenChange={setIsAddCustomerOpen}
+          onCreated={async (customerId) => {
+            await fetchCustomers()
+            setSelectedCustomerId(customerId)
+          }}
+        />
+
+        {/* Customer Information */}
         <Card className="p-4 sm:p-6 mb-4 sm:mb-8">
-          <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Purchaser Information (Optional)</h2>
+          <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Customer Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Purchaser Name </label>
-              <Input
-                value={purchaserName}
-                onChange={(e) => {
-                  const value = e.target.value
-                  // Only allow letters, numbers, and spaces, max 30 characters
-                  if (value.length <= 30 && /^[a-zA-Z0-9\s]*$/.test(value)) {
-                    setPurchaserName(value)
-                  }
-                }}
-                placeholder={purchaserName ? "" : "Enter purchaser name"}
-              />
-              {/* <p className="text-xs text-muted-foreground mt-1">
-                {purchaserName.length}/30 characters (letters, numbers, and spaces only)
-              </p> */}
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium">Customer <span className="text-red-500">*</span></label>
+                <button
+                  type="button"
+                  onClick={() => setIsAddCustomerOpen(true)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  + Add new customer
+                </button>
+              </div>
+              <select
+                value={selectedCustomerId}
+                onChange={(e) => setSelectedCustomerId(e.target.value)}
+                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+              >
+                <option value="">Choose a customer...</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Description </label>
@@ -682,22 +763,21 @@ function SalesContent() {
                     className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
                   >
                     <option value="">Choose an item...</option>
-                    {items.map((item) => (
+                    {items.filter((item) => getAvailable(item) > 0).map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} - Selling Price: RS {(item.sellingPrice || item.price || 0).toFixed(2)} - Available: {item.quantity}
+                        {item.name} - Available: {getAvailable(item)} boxes
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    Quantity <span className="text-red-500">*</span>
-                    {saleType === "box" && " (Number of Boxes)"}
+                    Number of Boxes <span className="text-red-500">*</span>
                   </label>
                   <Input
                     type="text"
                     value={quantity}
-                    placeholder={saleType === "box" ? "Enter number of boxes" : "Enter quantity"}
+                    placeholder="Enter number of boxes"
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => {
                       const val = e.target.value
@@ -707,29 +787,26 @@ function SalesContent() {
                       }
                     }}
                   />
-                  {saleType === "box" && quantity && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      ℹ️ Will deduct {quantity * 12} items from inventory (Quantity × 12)
-                    </p>
-                  )}
                 </div>
                   
                   <div>
                   <label className="block text-sm font-medium mb-1">
-                    Price Per Item (RS) <span className="text-red-500">*</span>
+                    Price Per Box (RS) <span className="text-red-500">*</span>
                   </label>
                     <Input
                       type="number"
                       min="0"
                       step="0.01"
-                    placeholder="Enter sellingPrice per item"
-                    value={sellingPricePerItem === "" ? "" : sellingPricePerItem}
-                    onChange={(e) => setPricePerItem(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                    placeholder="Enter price per box"
+                    value={pricePerBox === "" ? "" : pricePerBox}
+                    onChange={(e) => setPricePerBox(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
                     className="font-semibold"
                     />
-                    {saleType === "box" && sellingPricePerItem && quantity && (
-                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                        💰 Total: RS {((sellingPricePerItem || 0) * quantity * 12).toFixed(2)} ({quantity * 12} items × RS {sellingPricePerItem || 0})
+                    {selectedCustomer && selectedItemId && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {customerPrice !== undefined
+                          ? `${selectedCustomer.name}'s price: RS ${customerPrice.toFixed(2)} per box`
+                          : `No saved price for ${selectedCustomer.name} yet — this sale's price will be saved`}
                       </p>
                     )}
                   </div>
@@ -739,14 +816,14 @@ function SalesContent() {
                   <div className="w-full border-2 border-primary/30 bg-primary/5 rounded-lg p-3">
                     <p className="text-2xl font-bold text-primary">
                       RS {
-                        (sellingPricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof sellingPricePerItem === 'number')
-                          ? (sellingPricePerItem * quantity).toFixed(2)
+                        (pricePerBox !== "" && quantity !== "" && typeof quantity === 'number' && typeof pricePerBox === 'number')
+                          ? (pricePerBox * quantity).toFixed(2)
                           : "0.00"
                       }
                     </p>
-                    {sellingPricePerItem !== "" && quantity !== "" && typeof quantity === 'number' && typeof sellingPricePerItem === 'number' && (
+                    {pricePerBox !== "" && quantity !== "" && typeof quantity === 'number' && typeof pricePerBox === 'number' && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        RS {(sellingPricePerItem || 0).toFixed(2)} × {quantity} units
+                        RS {(pricePerBox || 0).toFixed(2)} × {quantity} boxes
                       </p>
                     )}
                   </div>
@@ -772,11 +849,11 @@ function SalesContent() {
                         <p className="font-semibold text-lg">{item.itemName}</p>
                         <div className="flex items-center gap-3 mt-2 text-sm">
                           <span className="text-muted-foreground">
-                            Qty: <span className="font-semibold text-foreground">{item.quantity}</span>
+                            Boxes: <span className="font-semibold text-foreground">{item.quantity}</span>
                           </span>
                           <span className="text-muted-foreground">×</span>
                           <span className="text-muted-foreground">
-                            Unit Price: <span className="font-semibold text-foreground">RS {(() => {
+                            Box Price: <span className="font-semibold text-foreground">RS {(() => {
                               const unitPrice = item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
                               return unitPrice.toFixed(2)
                             })()}</span>
@@ -947,7 +1024,7 @@ function SalesContent() {
 
 
               <Button onClick={handleCompleteSale} disabled={isLoading || cart.length === 0} className="w-full">
-                {isLoading ? "Processing..." : "Complete Sale"}
+                {isLoading ? "Processing..." : editingSale ? "Update Sale" : "Complete Sale"}
               </Button>
             </Card>
           </div>
@@ -958,54 +1035,40 @@ function SalesContent() {
         {/* Sales List View */}
         {activeView === "list" && (
           <div className="space-y-6">
-            {/* Date Filter */}
-            <DateFilter onFilter={handleDateFilter} />
-
             {/* Filters */}
-            <Card className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Search */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Search</label>
-                  <Input
-                    type="text"
-                    placeholder="Search by user, item, purchaser, or description..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="h-11"
-                  />
-                </div>
-
-                {/* Sale Type Filter */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Sale Type</label>
-                  <select
-                    value={saleTypeFilter}
-                    onChange={(e) => setSaleTypeFilter(e.target.value as any)}
-                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="retail">Retail</option>
-                    <option value="box">Box Purchase</option>
-                  </select>
-                </div>
-
-                {/* Payment Method Filter */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Payment Method</label>
-                  <select
-                    value={paymentMethodFilter}
-                    onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-                    className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-                  >
-                    <option value="all">All Methods</option>
-                    <option value="cash">Cash Only</option>
-                    <option value="credit">Credit Only</option>
-                    <option value="both">Both (Cash + Credit)</option>
-                  </select>
-                </div>
-              </div>
-            </Card>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input
+                type="text"
+                placeholder="Search user, item, customer..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-9 w-full sm:w-64 text-sm"
+              />
+              <select
+                value={customerFilter}
+                onChange={(e) => setCustomerFilter(e.target.value)}
+                className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none max-w-[180px]"
+              >
+                <option value="all">All Customers</option>
+                <option value="none">No customer (older sales)</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={paymentMethodFilter}
+                onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
+                className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
+              >
+                <option value="all">All Methods</option>
+                <option value="cash">Cash Only</option>
+                <option value="credit">Credit Only</option>
+                <option value="both">Cash + Credit</option>
+              </select>
+              <DateFilter compact onFilter={handleDateFilter} />
+            </div>
 
             {/* Sales List */}
             <Card className="p-4 sm:p-6">
@@ -1026,117 +1089,133 @@ function SalesContent() {
               ) : filteredSales.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No sales found</div>
               ) : (
-                <div className="space-y-4">
-                  {filteredSales.map((sale, index) => (
-                    <div key={sale.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                      <div className="flex flex-wrap justify-between items-start gap-4 mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">#{(index + 1).toString().padStart(4, '0')}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              sale.type === "box" 
-                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                                : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                            }`}>
-                              {sale.type.toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {sale.transactionDate?.toDate ? 
-                              new Date(sale.transactionDate.toDate()).toLocaleString() :
-                              new Date(sale.transactionDate).toLocaleString()
-                            }
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            By: {sale.userName || "Unknown"}
-                          </div>
-                          {sale.purchaserName && (
-                            <div className="text-sm text-muted-foreground">
-                              Purchaser: {sale.purchaserName}
-                            </div>
-                          )}
-                          {sale.description && (
-                            <div className="text-sm text-muted-foreground">
-                              Description: {sale.description}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-primary">
-                            RS {(sale.totalAmount || 0).toFixed(2)}
-                          </div>
-                          <div className="text-sm">
-                            {sale.paymentMethod ? (
-                              sale.paymentMethod.cash && sale.paymentMethod.credit ? (
-                                <div className="space-y-1">
-                                  <div className="text-green-600 dark:text-green-400">
-                                    Cash: RS {((sale.paymentMethod.cashAmount || 0) || 0).toFixed(2)}
-                                  </div>
-                                  <div className="text-blue-600 dark:text-blue-400">
-                                    Credit: RS {(sale.paymentMethod.creditAmount || 0).toFixed(2)}
-                                  </div>
-                                </div>
-                              ) : sale.paymentMethod.cash ? (
-                                <div className="text-green-600 dark:text-green-400">Cash Payment</div>
-                              ) : (
-                                <div className="text-blue-600 dark:text-blue-400">Credit Payment</div>
-                              )
-                            ) : (
-                              <div className="text-muted-foreground">No payment info</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Items */}
-                      <div className="mt-3 pt-3 border-t border-border">
-                        <div className="text-sm font-medium mb-2">Items:</div>
-                        <div className="space-y-1">
-                          {sale.items.map((item, idx) => (
-                            <div key={idx} className="text-sm text-muted-foreground">
-                              <div className="flex justify-between">
-                                <span>
-                                  {item.itemName} × {item.quantity}
-                                </span>
-                                <span className="font-semibold text-foreground">
-                                  RS {(item.totalPrice || 0).toFixed(2)}
-                                </span>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full min-w-[960px]">
+                    <thead className="bg-muted/50">
+                      <tr className="border-b border-border text-sm">
+                        <th className="text-left py-3 px-4 font-semibold">Sale #</th>
+                        <th className="text-left py-3 px-4 font-semibold">Date</th>
+                        <th className="text-left py-3 px-4 font-semibold">Customer</th>
+                        <th className="text-left py-3 px-4 font-semibold">Items</th>
+                        <th className="text-right py-3 px-4 font-semibold">Cash</th>
+                        <th className="text-right py-3 px-4 font-semibold">Credit</th>
+                        <th className="text-right py-3 px-4 font-semibold">Total</th>
+                        <th className="text-left py-3 px-4 font-semibold">By</th>
+                        <th className="py-3 px-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSales.map((sale, index) => {
+                        const saleDate = sale.transactionDate?.toDate
+                          ? sale.transactionDate.toDate()
+                          : new Date(sale.transactionDate)
+                        const cash = sale.paymentMethod?.cash ? sale.paymentMethod.cashAmount || 0 : 0
+                        const credit = sale.paymentMethod?.credit ? sale.paymentMethod.creditAmount || 0 : 0
+                        return (
+                          <tr
+                            key={sale.id}
+                            className={`border-b border-border align-top text-sm hover:bg-muted/30 transition-colors ${
+                              index % 2 === 0 ? "bg-background" : "bg-muted/10"
+                            }`}
+                          >
+                            <td className="py-3 px-4 font-semibold whitespace-nowrap">
+                              #{(sale.saleNumber || index + 1).toString().padStart(4, "0")}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <div>{saleDate.toLocaleDateString()}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {saleDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                               </div>
-                              <div className="flex justify-between text-xs">
-                                <span className="text-muted-foreground">
-                                  @ RS {(() => {
-                                    const unitPrice = item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
-                                    return unitPrice.toFixed(2)
-                                  })()} each
-                                </span>
-                                <span className="flex gap-2">
-                                  {item.cashPrice !== undefined && (
-                                    <span className="text-green-600 dark:text-green-400">
-                                      Cash: RS {(item.cashPrice || 0).toFixed(2)}
-                                    </span>
-                                  )}
-                                  {item.creditPrice !== undefined && (
-                                    <span className="text-blue-600 dark:text-blue-400">
-                                      Credit: RS {(item.creditPrice || 0).toFixed(2)}
-                                    </span>
-                                  )}
-                                </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium">{sale.purchaserName || "—"}</div>
+                              {sale.description && (
+                                <div className="text-xs text-muted-foreground line-clamp-2 max-w-[200px]">{sale.description}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="space-y-0.5">
+                                {sale.items.map((item, idx) => {
+                                  const boxInfo = getBoxInfo(sale, item)
+                                  const unitPrice =
+                                    item.sellingPricePerUnit || (item.quantity > 0 ? item.totalPrice / item.quantity : 0) || 0
+                                  return (
+                                    <div key={idx}>
+                                      <span className="font-medium">{item.itemName}</span>{" "}
+                                      <span className="text-muted-foreground">
+                                        {boxInfo
+                                          ? `× ${boxInfo.boxes} boxes @ RS ${boxInfo.boxPrice.toFixed(2)}`
+                                          : `× ${item.quantity} @ RS ${unitPrice.toFixed(2)}`}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="text-sm font-medium mt-2">
-                          Total Items: {sale.items.reduce((sum, item) => sum + item.quantity, 0)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                            </td>
+                            <td className="py-3 px-4 text-right text-green-600 dark:text-green-400 whitespace-nowrap">
+                              {cash ? `RS ${cash.toFixed(2)}` : "—"}
+                            </td>
+                            <td className="py-3 px-4 text-right text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                              {credit ? `RS ${credit.toFixed(2)}` : "—"}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-primary whitespace-nowrap">
+                              RS {(sale.totalAmount || 0).toFixed(2)}
+                            </td>
+                            <td className="py-3 px-4 text-muted-foreground">{sale.userName || "Unknown"}</td>
+                            <td className="py-3 px-4 text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                    aria-label={`Actions for sale ${sale.saleNumber || index + 1}`}
+                                  >
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                  <DropdownMenuItem disabled={!canEditSale(sale)} onSelect={() => handleEditSale(sale)}>
+                                    <Pencil />
+                                    {canEditSale(sale) ? "Edit" : "Edit (older sale)"}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem variant="destructive" onSelect={() => handleDeleteSale(sale)}>
+                                    <Trash2 />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot className="bg-muted/30 border-t-2 border-border text-sm">
+                      <tr>
+                        <td colSpan={4} className="py-3 px-4 font-semibold">
+                          Total ({filteredSales.length} sales)
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-green-600 dark:text-green-400 whitespace-nowrap">
+                          RS {filteredSales.reduce((sum, sale) => sum + (sale.paymentMethod?.cash ? sale.paymentMethod.cashAmount || 0 : 0), 0).toFixed(2)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                          RS {filteredSales.reduce((sum, sale) => sum + (sale.paymentMethod?.credit ? sale.paymentMethod.creditAmount || 0 : 0), 0).toFixed(2)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-primary whitespace-nowrap">
+                          RS {filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0).toFixed(2)}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               )}
             </Card>
           </div>
         )}
       </main>
+      </div>
     </>
   )
 }

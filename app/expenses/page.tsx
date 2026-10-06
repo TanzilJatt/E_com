@@ -268,7 +268,8 @@ function ExpensesContent() {
   return (
     <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <div className="md:pl-64">
+      <main className="w-full px-4 sm:px-6 lg:px-10 py-4 sm:py-8">
         {/* Header - Mobile Responsive */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
           <div>
@@ -280,8 +281,10 @@ function ExpensesContent() {
           </Button>
         </div>
 
-        {/* Date Filter */}
-        <DateFilter onFilter={handleDateFilter} />
+        {/* Filters */}
+        <div className="mb-6">
+          <DateFilter compact onFilter={handleDateFilter} />
+        </div>
 
         {/* Stats - Mobile Responsive */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -649,6 +652,7 @@ function ExpensesContent() {
           </>
         )}
       </main>
+      </div>
     </>
   )
 }
