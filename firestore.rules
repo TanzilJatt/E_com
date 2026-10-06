@@ -1,125 +1,206 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // ---------------------------------------------------------------
     // Helper functions
+    // ---------------------------------------------------------------
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    
-    // Items collection - users can only access their own items
-    match /items/{itemId} {
-      // Allow read if user is signed in and is the owner, or if document doesn't exist yet (for list queries)
-      allow read: if isSignedIn() && (resource.data.createdBy == request.auth.uid || request.resource.data.createdBy == request.auth.uid);
-      
-      // Allow create if user is signed in and createdBy is set to their uid
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      
-      // Allow update if user is signed in and is the owner
-      allow update: if isSignedIn() && resource.data.createdBy == request.auth.uid;
-      
-      // Allow delete if user is signed in and is the owner
-      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
-      
-      // Allow list operations for signed-in users
-      allow list: if isSignedIn();
-    }
-    
-    // Sales collection - users can only access their own sales
-    match /sales/{saleId} {
-      // Allow read if user is signed in and is the owner
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      
-      // Allow create if user is signed in and userId is set to their uid
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      
-      // Allow update if user is signed in and is the owner
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow delete if user is signed in and is the owner
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow list operations for signed-in users
-      allow list: if isSignedIn();
-    }
-    
-    // Expenses collection - users can only access their own expenses
-    match /expenses/{expenseId} {
-      // Allow read if user is signed in and is the owner
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      
-      // Allow create if user is signed in and userId is set to their uid
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      
-      // Allow update if user is signed in and is the owner
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow delete if user is signed in and is the owner
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow list operations for signed-in users
-      allow list: if isSignedIn();
-    }
-    
-    // Purchases collection - users can only access their own purchases
-    match /purchases/{purchaseId} {
-      // Allow read if user is signed in and is the owner, or if document doesn't exist yet (for list queries)
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      
-      // Allow create if user is signed in and userId is set to their uid
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      
-      // Allow update if user is signed in and is the owner
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow delete if user is signed in and is the owner
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow list operations for signed-in users
-      allow list: if isSignedIn();
-    }
-    
-    // Allow list operation on purchases collection root
-    match /purchases {
-      allow list: if isSignedIn();
-    }
-    
-    // Customers collection - users can only access their own customers
-    match /customers/{customerId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn();
+
+    function userDoc(uid) {
+      return /databases/$(database)/documents/users/$(uid);
     }
 
-    // Customer payments - money received against customer credit balances
-    match /customerPayments/{paymentId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn();
+    // Admin = role 'admin', or an older account that has no profile yet
+    function isAdmin() {
+      return !exists(userDoc(request.auth.uid))
+        || get(userDoc(request.auth.uid)).data.role == 'admin';
     }
 
-    // Activity logs - users can only read their own logs
-    match /activityLogs/{logId} {
-      // Allow read if user is signed in and is the owner
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      
-      // Allow create for signed-in users (application-level control)
-      allow create: if isSignedIn();
-      
-      // Logs should not be modified or deleted
+    // Active staff member working for this admin
+    function isStaffOf(adminId) {
+      let profile = get(userDoc(request.auth.uid)).data;
+      return profile.role == 'staff'
+        && profile.active == true
+        && profile.adminId == adminId;
+    }
+
+    // Admin working on their own data
+    function isAdminOwner(ownerId) {
+      return request.auth.uid == ownerId && isAdmin();
+    }
+
+    // New record created by a staff member inside their admin's data
+    function isStaffCreate() {
+      return request.resource.data.staffId == request.auth.uid
+        && isStaffOf(request.resource.data.userId);
+    }
+
+    // ---------------------------------------------------------------
+    // Users (roles): admin / staff
+    // ---------------------------------------------------------------
+    match /users/{uid} {
+      // Own profile, or an admin reading their staff
+      allow read: if isSignedIn()
+        && (uid == request.auth.uid || resource.data.adminId == request.auth.uid);
+
+      // First login: own profile is always created as admin of their own data
+      allow create: if isSignedIn()
+        && uid == request.auth.uid
+        && request.resource.data.role == 'admin'
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Admin creating a staff login
+      allow create: if isSignedIn()
+        && uid != request.auth.uid
+        && isAdmin()
+        && request.resource.data.role == 'staff'
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Admin can rename / enable / disable their staff.
+      // A user can edit their own profile but not enable themselves.
+      // Nobody can change role or admin link.
+      allow update: if isSignedIn()
+        && (resource.data.adminId == request.auth.uid
+            || (uid == request.auth.uid && request.resource.data.active == resource.data.active))
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.adminId == resource.data.adminId;
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------
+    // Staff stock: boxes the admin has sent to a staff member
+    // (document id: staffId_itemId)
+    // ---------------------------------------------------------------
+    match /staffStock/{stockId} {
+      // resource == null: checking stock that doesn't exist yet (first time an item is sent)
+      allow read: if isSignedIn()
+        && (resource == null
+            || resource.data.adminId == request.auth.uid
+            || resource.data.staffId == request.auth.uid);
+
+      // Admin sends / takes back stock
+      allow create: if isSignedIn() && request.resource.data.adminId == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.adminId == request.auth.uid
+        && request.resource.data.adminId == request.auth.uid;
+
+      // Staff can only reduce their own stock (when recording a sale)
+      allow update: if isSignedIn()
+        && resource.data.staffId == request.auth.uid
+        && isStaffOf(resource.data.adminId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt'])
+        && request.resource.data.quantity < resource.data.quantity
+        && request.resource.data.quantity >= 0;
+
+      allow delete: if isSignedIn() && resource.data.adminId == request.auth.uid;
+    }
+
+    // History of stock sent to / taken back from staff
+    match /stockTransfers/{transferId} {
+      allow read: if isSignedIn()
+        && (resource.data.adminId == request.auth.uid || resource.data.staffId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.adminId == request.auth.uid;
       allow update, delete: if false;
-      
-      // Allow list operations for signed-in users
+    }
+
+    // Cash the staff member handed over to the admin (staff ledger)
+    match /staffPayments/{paymentId} {
+      allow read: if isSignedIn()
+        && (resource.data.adminId == request.auth.uid || resource.data.staffId == request.auth.uid);
+      allow create: if isSignedIn() && isAdminOwner(request.resource.data.adminId);
+      allow delete: if isSignedIn() && resource.data.adminId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ---------------------------------------------------------------
+    // Items (admin only - staff sell from staffStock)
+    // ---------------------------------------------------------------
+    match /items/{itemId} {
+      allow read: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow create: if isSignedIn() && isAdminOwner(request.resource.data.createdBy);
+      allow update: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Sales: admin full access, staff can add and see their own
+    // ---------------------------------------------------------------
+    match /sales/{saleId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || resource.data.staffId == request.auth.uid);
+      allow create: if isSignedIn()
+        && (isAdminOwner(request.resource.data.userId) || isStaffCreate());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Expenses: admin full access, staff can add
+    // ---------------------------------------------------------------
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || resource.data.staffId == request.auth.uid);
+      allow create: if isSignedIn()
+        && (isAdminOwner(request.resource.data.userId) || isStaffCreate());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Purchases (admin only)
+    // ---------------------------------------------------------------
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isAdminOwner(request.resource.data.userId);
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Customers: admin full access, staff can read, add, and save prices
+    // ---------------------------------------------------------------
+    match /customers/{customerId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isStaffOf(resource.data.userId));
+      allow create: if isSignedIn()
+        && (request.resource.data.userId == request.auth.uid || isStaffOf(request.resource.data.userId));
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Staff selling to a customer remember the agreed prices
+      allow update: if isSignedIn()
+        && isStaffOf(resource.data.userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['itemPrices', 'updatedAt']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Customer payments (admin only)
+    // ---------------------------------------------------------------
+    match /customerPayments/{paymentId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isAdminOwner(request.resource.data.userId);
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Activity logs: anyone signed in can write, read own, never edit
+    // ---------------------------------------------------------------
+    match /activityLogs/{logId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update, delete: if false;
       allow list: if isSignedIn();
     }
   }
 }
-

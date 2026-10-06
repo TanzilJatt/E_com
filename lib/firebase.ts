@@ -131,4 +131,4 @@ if (isConfigValid) {
   }
 }
   
-export { db, auth }
+export { db, auth, firebaseConfig }

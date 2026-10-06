@@ -2,6 +2,8 @@ import { db } from "./firebase"
 import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, Timestamp, query, where } from "firebase/firestore"
 import { logActivity } from "./activity-logs"
 
+export const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Supplies", "Marketing", "Salaries", "Shipping", "Equipment", "Other"]
+
 export interface Expense {
   id: string
   name: string
@@ -9,8 +11,9 @@ export interface Expense {
   amount: number
   description: string
   date: Timestamp
-  userId: string
+  userId: string // Admin who owns the data
   userName: string
+  staffId?: string // Set when a staff member added the expense
   createdAt: Timestamp
 }
 
@@ -18,6 +21,7 @@ export async function addExpense(
   expenseData: Omit<Expense, "id" | "userId" | "userName" | "createdAt">,
   userId: string,
   userName: string,
+  staffId?: string,
 ) {
   try {
     if (!db) {
@@ -27,6 +31,7 @@ export async function addExpense(
       ...expenseData,
       userId,
       userName,
+      ...(staffId ? { staffId } : {}),
       createdAt: Timestamp.now(),
     })
 

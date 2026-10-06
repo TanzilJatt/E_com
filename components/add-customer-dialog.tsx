@@ -4,6 +4,7 @@ import type React from "react"
 import { useState } from "react"
 import { auth } from "@/lib/firebase"
 import { addCustomer } from "@/lib/customers"
+import { useCurrentUser } from "@/components/auth-guard"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -25,6 +26,7 @@ interface AddCustomerDialogProps {
 }
 
 export function AddCustomerDialog({ open, onOpenChange, onCreated }: AddCustomerDialogProps) {
+  const { ownerId } = useCurrentUser()
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -41,7 +43,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCreated }: AddCustomer
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    const userId = auth?.currentUser?.uid
+    const userId = ownerId
     if (!userId) {
       setError("Please log in to add customers")
       return

@@ -5,6 +5,7 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { auth } from "@/lib/firebase"
+import { getUserProfile } from "@/lib/users"
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -84,7 +85,9 @@ export default function LoginPage() {
         // Sign In - check if email is verified
         const userCredential = await signInWithEmailAndPassword(auth, email, password)
         
-        if (!userCredential.user.emailVerified) {
+        // Staff logins are created by their admin and don't need email verification
+        const profile = userCredential.user.emailVerified ? null : await getUserProfile(userCredential.user.uid)
+        if (!userCredential.user.emailVerified && profile?.role !== "staff") {
           // Resend verification email
           try {
             await sendEmailVerification(userCredential.user)

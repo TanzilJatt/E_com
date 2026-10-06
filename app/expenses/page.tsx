@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   addExpense,
+  EXPENSE_CATEGORIES,
   updateExpense,
   deleteExpense,
   getExpenses,
@@ -22,7 +23,6 @@ import { DateFilter, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
-const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Supplies", "Marketing", "Salaries", "Shipping", "Equipment", "Other"]
 const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"]
 
 function ExpensesContent() {

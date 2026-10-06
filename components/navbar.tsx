@@ -5,6 +5,7 @@ import { auth } from "@/lib/firebase"
 import { signOut, onAuthStateChanged } from "firebase/auth"
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useCurrentUser } from "@/components/auth-guard"
 import {
   Home,
   Package,
@@ -18,17 +19,30 @@ import {
   Boxes,
   Menu,
   X,
+  ShieldCheck,
+  NotebookTabs,
   type LucideIcon,
 } from "lucide-react"
 
-const NAV_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/", label: "Dashboard", icon: Home },
+// staff: also shown to staff; staffOnly: shown to staff only
+const NAV_LINKS: {
+  href: string
+  label: string
+  icon: LucideIcon
+  staff?: boolean
+  staffOnly?: boolean
+  staffLabel?: string
+}[] = [
+  { href: "/", label: "Dashboard", icon: Home, staff: true },
+  { href: "/my-inventory", label: "My Inventory", icon: Package, staffOnly: true },
   { href: "/items", label: "Items", icon: Package },
-  { href: "/sales", label: "Sales", icon: ShoppingCart },
+  { href: "/sales", label: "Sales", icon: ShoppingCart, staff: true },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/ledger", label: "Ledger", icon: BookOpen },
   { href: "/expenses", label: "Expenses", icon: Wallet },
   { href: "/reports", label: "Reports", icon: PieChart },
+  { href: "/staff-ledger", label: "Staff Ledger", icon: NotebookTabs, staff: true, staffLabel: "My Ledger" },
+  { href: "/users", label: "Users", icon: ShieldCheck },
 ]
 
 const SIDEBAR_BG = "bg-[#0d3a4a]"
@@ -40,6 +54,8 @@ const ITEM_ACTIVE = "bg-[#164c5e] text-[#29b6f6]"
 export function Navbar() {
   const router = useRouter()
   const pathname = usePathname()
+  const { isStaff } = useCurrentUser()
+  const navLinks = NAV_LINKS.filter((link) => (isStaff ? link.staff || link.staffOnly : !link.staffOnly))
   const [isOpen, setIsOpen] = useState(false)
   const [userName, setUserName] = useState<string>("")
   const [userInitial, setUserInitial] = useState<string>("U")
@@ -97,10 +113,10 @@ export function Navbar() {
 
   const menu = (
     <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1.5">
-      {NAV_LINKS.map(({ href, label, icon: Icon }) => (
+      {navLinks.map(({ href, label, staffLabel, icon: Icon }) => (
         <Link key={href} href={href} className={`${ITEM_BASE} ${isActive(href) ? ITEM_ACTIVE : ITEM_IDLE}`}>
           <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
-          {label}
+          {isStaff && staffLabel ? staffLabel : label}
         </Link>
       ))}
       <Link
@@ -124,7 +140,10 @@ export function Navbar() {
       </div>
       <div className="min-w-0">
         <p className="text-sm font-medium text-white truncate">{userName}</p>
-        <p className="text-xs text-white/50 truncate">{auth.currentUser?.email}</p>
+        <p className="text-xs text-white/50 truncate">
+          {isStaff ? "Staff · " : ""}
+          {auth.currentUser?.email}
+        </p>
       </div>
     </div>
   )

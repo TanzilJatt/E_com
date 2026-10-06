@@ -1,6 +1,7 @@
 import { db } from "./firebase"
 import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, getDocs, query, orderBy, where, runTransaction, limit, increment } from "firebase/firestore"
 import { logActivity } from "./activity-logs"
+import { adjustStaffStock, getStaffStockQuantity, staffStockId } from "./staff-stock"
 
 async function getNextSaleNumber(userId: string): Promise<number> {
   try {
@@ -108,8 +109,9 @@ export interface Sale {
   purchaserName?: string
   customerId?: string // Linked customer (purchaserName holds their name at time of sale)
   description?: string
-  userId: string
+  userId: string // Admin who owns the data
   userName: string
+  staffId?: string // Set when a staff member made the sale; stock came from their stock
   createdAt: any
   transactionDate: any
 }
@@ -124,6 +126,19 @@ export async function createSale(
       throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
     }
     
+    const staffId = saleData.staffId
+
+    // Staff sell from the stock the admin sent them, so check it before saving anything
+    if (staffId) {
+      for (const [itemId, quantity] of Object.entries(quantitiesByItem(saleData.items))) {
+        const available = await getStaffStockQuantity(staffId, itemId)
+        if (quantity > available) {
+          const name = saleData.items.find((i) => i.itemId === itemId)?.itemName || "item"
+          throw new Error(`Not enough stock for ${name}. You have ${available} boxes.`)
+        }
+      }
+    }
+
     // Generate sequential sale number
     const saleNumber = await getNextSaleNumber(userId)
     console.log("Generated sale number:", saleNumber)
@@ -187,11 +202,21 @@ export async function createSale(
     if (saleData.description) {
       saleDoc.description = saleData.description
     }
+    if (staffId) {
+      saleDoc.staffId = staffId
+    }
 
     const saleRef = await addDoc(collection(db, "sales"), saleDoc)
 
     // Update inventory for each item
     for (const item of saleData.items) {
+      if (staffId) {
+        await updateDoc(doc(db, "staffStock", staffStockId(staffId, item.itemId)), {
+          quantity: increment(-item.quantity),
+          updatedAt: serverTimestamp(),
+        })
+        continue
+      }
       const itemRef = doc(db, "items", item.itemId)
       const itemDoc = await getDoc(itemRef)
       if (itemDoc.exists()) {
@@ -243,6 +268,25 @@ const cleanSaleItem = (item: SaleItem) => {
   return cleanItem
 }
 
+// Boxes available to a sale: the staff member's stock for staff sales, the main inventory otherwise
+async function getAvailableStock(sale: Sale, itemId: string): Promise<number> {
+  if (sale.staffId) return getStaffStockQuantity(sale.staffId, itemId)
+  const itemDoc = await getDoc(doc(db, "items", itemId))
+  return itemDoc.exists() ? itemDoc.data().quantity || 0 : 0
+}
+
+// Put boxes back where a sale took them from (negative change takes more out)
+async function returnStock(sale: Sale, itemId: string, itemName: string, change: number): Promise<void> {
+  if (sale.staffId) {
+    await adjustStaffStock(sale.userId, sale.staffId, itemId, itemName, change)
+    return
+  }
+  const itemRef = doc(db, "items", itemId)
+  if ((await getDoc(itemRef)).exists()) {
+    await updateDoc(itemRef, { quantity: increment(change), updatedAt: serverTimestamp() })
+  }
+}
+
 // Update an existing sale. Stock is adjusted by the difference between the old and new lines.
 // Sale number and date are kept.
 export async function updateSale(
@@ -261,8 +305,7 @@ export async function updateSale(
   for (const itemId of itemIds) {
     const extra = (newQty[itemId] || 0) - (oldQty[itemId] || 0)
     if (extra <= 0) continue
-    const itemDoc = await getDoc(doc(db, "items", itemId))
-    const available = itemDoc.exists() ? itemDoc.data().quantity || 0 : 0
+    const available = await getAvailableStock(originalSale, itemId)
     if (extra > available) {
       const name = saleData.items.find((i) => i.itemId === itemId)?.itemName || "item"
       throw new Error(`Not enough stock for ${name}. Only ${available} more available.`)
@@ -286,10 +329,8 @@ export async function updateSale(
   for (const itemId of itemIds) {
     const change = (oldQty[itemId] || 0) - (newQty[itemId] || 0) // positive = stock returned
     if (change === 0) continue
-    const itemRef = doc(db, "items", itemId)
-    if ((await getDoc(itemRef)).exists()) {
-      await updateDoc(itemRef, { quantity: increment(change), updatedAt: serverTimestamp() })
-    }
+    const itemName = [...originalSale.items, ...saleData.items].find((i) => i.itemId === itemId)?.itemName || ""
+    await returnStock(originalSale, itemId, itemName, change)
   }
 
   await logActivity("SALE_UPDATED", `Updated sale #${originalSale.saleNumber || ""}`, {
@@ -306,10 +347,8 @@ export async function deleteSale(sale: Sale): Promise<void> {
   await deleteDoc(doc(db, "sales", sale.id))
 
   for (const [itemId, quantity] of Object.entries(quantitiesByItem(sale.items))) {
-    const itemRef = doc(db, "items", itemId)
-    if ((await getDoc(itemRef)).exists()) {
-      await updateDoc(itemRef, { quantity: increment(quantity), updatedAt: serverTimestamp() })
-    }
+    const itemName = sale.items.find((i) => i.itemId === itemId)?.itemName || ""
+    await returnStock(sale, itemId, itemName, quantity)
   }
 
   await logActivity("SALE_DELETED", `Deleted sale #${sale.saleNumber || ""}`, {
@@ -407,4 +446,15 @@ export async function getSales(userId?: string, triggerMigration = false): Promi
     console.error("Error fetching sales:", error)
     throw error
   }
+}
+
+// Sales made by one staff member
+export async function getStaffSales(staffId: string): Promise<Sale[]> {
+  if (!db) {
+    throw new Error("Database is not available")
+  }
+  const snapshot = await getDocs(query(collection(db, "sales"), where("staffId", "==", staffId)))
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Sale)
+    .sort((a, b) => (a.saleNumber || 0) - (b.saleNumber || 0))
 }

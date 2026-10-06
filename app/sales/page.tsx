@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState } from "react"
 import { db, auth } from "@/lib/firebase"
-import { collection, getDocs } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createSale, getSales, updateSale, deleteSale, type SaleItem, type Sale } from "@/lib/sales"
-import type { Item } from "@/lib/items"
+import { createSale, getSales, getStaffSales, updateSale, deleteSale, type SaleItem, type Sale } from "@/lib/sales"
+import { getItems, type Item } from "@/lib/items"
+import { getStaffStock } from "@/lib/staff-stock"
+import { useCurrentUser } from "@/components/auth-guard"
+import { AddExpenseDialog } from "@/components/add-expense-dialog"
 import { getCustomers, saveCustomerItemPrices, type Customer } from "@/lib/customers"
 import { AddCustomerDialog } from "@/components/add-customer-dialog"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
@@ -41,7 +43,10 @@ function SalesContent() {
   const [activeView, setActiveView] = useState<"record" | "list">("list")
   const [authReady, setAuthReady] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  
+  // Staff sell from the stock their admin sent them and record sales into the admin's data
+  const { isStaff, ownerId, profile } = useCurrentUser()
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false)
+
   // Record Sale State
   const [items, setItems] = useState<Item[]>([])
   const [cart, setCart] = useState<SaleItem[]>([])
@@ -56,6 +61,8 @@ function SalesContent() {
   const [creditAmount, setCreditAmount] = useState<number | "">("")
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
+  // Staff type the buyer's name; it is not linked to the admin's customer list
+  const [customerName, setCustomerName] = useState("")
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false)
   // Sale being edited (null when recording a new sale)
   const [editingSale, setEditingSale] = useState<Sale | null>(null)
@@ -95,6 +102,11 @@ function SalesContent() {
     return () => unsubscribe()
   }, [])
 
+  // /sales?new=1 opens straight into the new sale form
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new")) setActiveView("record")
+  }, [])
+
   // Fetch data when auth is ready and user is logged in
   useEffect(() => {
     if (authReady && currentUserId) {
@@ -106,10 +118,11 @@ function SalesContent() {
 
   const fetchCustomers = async () => {
     try {
-      if (!currentUserId) return
-      setCustomers(await getCustomers(currentUserId))
-    } catch (error) {
+      if (!ownerId || isStaff) return
+      setCustomers(await getCustomers(ownerId))
+    } catch (error: any) {
       console.error("Error fetching customers:", error)
+      toast.error(`Could not load customers: ${error.message || error}`)
     }
   }
 
@@ -126,17 +139,22 @@ function SalesContent() {
     if (customerPrice !== undefined) setPricePerBox(customerPrice)
   }, [selectedCustomerId, selectedItemId, customerPrice])
 
-  const fetchItems = async () => {
+  // Items to sell from: a staff member's own stock, or for an admin the main inventory
+  // (or the staff member's stock when editing a sale that staff member made)
+  const fetchItems = async (saleBeingEdited: Sale | null = null) => {
     try {
-      if (!db || !currentUserId) {
+      if (!db || !currentUserId || !ownerId) {
         return
       }
-      
-      // Import getItems function to use user filtering
-      const { getItems } = await import("@/lib/items")
-      const itemsList = await getItems(currentUserId)
-      
-      setItems(itemsList)
+
+      const staffId = isStaff ? currentUserId : saleBeingEdited?.staffId
+      if (staffId) {
+        const stock = await getStaffStock({ staffId })
+        setItems(stock.map((s) => ({ id: s.itemId, name: s.itemName, quantity: s.quantity }) as Item))
+        return
+      }
+
+      setItems(await getItems(ownerId))
     } catch (error) {
       console.error("Error fetching items:", error)
     }
@@ -148,7 +166,7 @@ function SalesContent() {
         return
       }
       setLoading(true)
-      const salesList = await getSales(currentUserId)
+      const salesList = isStaff ? await getStaffSales(currentUserId) : await getSales(currentUserId)
       setSales(salesList)
       setFilteredSales(salesList)
     } catch (error) {
@@ -297,7 +315,11 @@ function SalesContent() {
     }
 
     // Every sale is recorded against a customer so it appears in their ledger
-    if (!selectedCustomer) {
+    if (isStaff && !customerName.trim()) {
+      setError("Please enter the customer name")
+      return
+    }
+    if (!isStaff && !selectedCustomer) {
       setError("Please select a customer for this sale")
       return
     }
@@ -335,8 +357,8 @@ function SalesContent() {
           cashAmount: finalCashAmount,
           creditAmount: finalCreditAmount,
         },
-        customerId: selectedCustomer?.id,
-        purchaserName: selectedCustomer?.name,
+        customerId: isStaff ? undefined : selectedCustomer?.id,
+        purchaserName: isStaff ? customerName.trim() : selectedCustomer?.name,
         description: description || undefined,
       }
       let saleId: string | null
@@ -345,9 +367,9 @@ function SalesContent() {
         saleId = editingSale.id
       } else {
         saleId = await createSale(
-          { ...saleData, userId: "", userName: "" },
-          auth?.currentUser?.uid || "system",
-          auth?.currentUser?.displayName || "System",
+          { ...saleData, userId: "", userName: "", staffId: isStaff ? currentUserId || undefined : undefined },
+          ownerId || "system",
+          profile?.name || auth?.currentUser?.displayName || "System",
         )
       }
 
@@ -379,8 +401,9 @@ function SalesContent() {
         setCashAmount("")
         setCreditAmount("")
         setSelectedCustomerId("")
+        setCustomerName("")
         setDescription("")
-        fetchItems()
+        fetchItems(null)
         fetchSales() // Refresh sales list
         
         // Redirect to list view after a short delay
@@ -459,6 +482,7 @@ function SalesContent() {
     setCashAmount("")
     setCreditAmount("")
     setSelectedCustomerId("")
+    setCustomerName("")
     setDescription("")
     setError("")
     setSuccess("")
@@ -466,6 +490,7 @@ function SalesContent() {
 
   const handleBackToList = () => {
     if (editingSale) {
+      if (editingSale.staffId) fetchItems(null)
       setEditingSale(null)
       resetSaleForm()
     }
@@ -474,11 +499,14 @@ function SalesContent() {
 
   // Only sales recorded in boxes (with the box marker) can be edited
   const canEditSale = (sale: Sale) => sale.items.length > 0 && sale.items.every((item) => item.unit === "box")
+  // Staff can only add sales; editing and deleting is for admins
+  const canManageSales = !isStaff
 
   const handleEditSale = (sale: Sale) => {
     resetSaleForm()
     keepPaymentRef.current = true
     setEditingSale(sale)
+    if (sale.staffId) fetchItems(sale)
     setCart(sale.items.map((item) => ({ ...item })))
     setSelectedCustomerId(sale.customerId || "")
     setDescription(sale.description || "")
@@ -497,7 +525,7 @@ function SalesContent() {
     try {
       await deleteSale(sale)
       toast.success(`Sale ${label} deleted`)
-      await Promise.all([fetchSales(), fetchItems()])
+      await Promise.all([fetchSales(), fetchItems(null)])
     } catch (err: any) {
       toast.error(err.message || "Failed to delete sale")
     }
@@ -650,21 +678,30 @@ function SalesContent() {
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Sales Management</h1>
-            <p className="text-sm sm:text-base text-muted-foreground mt-2">Record and view sales transactions</p>
+            <p className="text-sm sm:text-base text-muted-foreground mt-2">
+              {isStaff ? "Record sales from the stock assigned to you" : "Record and view sales transactions"}
+            </p>
           </div>
-          {activeView === "list" && (
-            <Button
-              onClick={() => setActiveView("record")}
-              size="lg"
-              className="w-full sm:w-auto"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Sale
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" size="lg" className="flex-1 sm:flex-none" onClick={() => setIsAddExpenseOpen(true)}>
+              + Add Expense
             </Button>
-          )}
+            {activeView === "list" && (
+              <Button
+                onClick={() => setActiveView("record")}
+                size="lg"
+                className="flex-1 sm:flex-none"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Sale
+              </Button>
+            )}
+          </div>
         </div>
+
+        <AddExpenseDialog open={isAddExpenseOpen} onOpenChange={setIsAddExpenseOpen} />
 
         {/* Record Sale View */}
         {activeView === "record" && (
@@ -708,26 +745,36 @@ function SalesContent() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium">Customer <span className="text-red-500">*</span></label>
-                <button
-                  type="button"
-                  onClick={() => setIsAddCustomerOpen(true)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  + Add new customer
-                </button>
+                {!isStaff && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCustomerOpen(true)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    + Add new customer
+                  </button>
+                )}
               </div>
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-              >
-                <option value="">Choose a customer...</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+              {isStaff ? (
+                <Input
+                  value={customerName}
+                  placeholder="Enter customer name"
+                  onChange={(e) => e.target.value.length <= 40 && setCustomerName(e.target.value)}
+                />
+              ) : (
+                <select
+                  value={selectedCustomerId}
+                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+                  className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
+                >
+                  <option value="">Choose a customer...</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Description </label>
@@ -762,7 +809,11 @@ function SalesContent() {
                     onChange={(e) => setSelectedItemId(e.target.value)}
                     className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
                   >
-                    <option value="">Choose an item...</option>
+                    <option value="">
+                      {isStaff && items.every((item) => getAvailable(item) <= 0)
+                        ? "No stock assigned to you yet"
+                        : "Choose an item..."}
+                    </option>
                     {items.filter((item) => getAvailable(item) > 0).map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} - Available: {getAvailable(item)} boxes
@@ -1044,6 +1095,7 @@ function SalesContent() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="h-9 w-full sm:w-64 text-sm"
               />
+              {!isStaff && (
               <select
                 value={customerFilter}
                 onChange={(e) => setCustomerFilter(e.target.value)}
@@ -1057,6 +1109,7 @@ function SalesContent() {
                   </option>
                 ))}
               </select>
+              )}
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
@@ -1100,8 +1153,8 @@ function SalesContent() {
                         <th className="text-right py-3 px-4 font-semibold">Cash</th>
                         <th className="text-right py-3 px-4 font-semibold">Credit</th>
                         <th className="text-right py-3 px-4 font-semibold">Total</th>
-                        <th className="text-left py-3 px-4 font-semibold">By</th>
-                        <th className="py-3 px-4"></th>
+                        {canManageSales && <th className="text-left py-3 px-4 font-semibold">By</th>}
+                        {canManageSales && <th className="py-3 px-4"></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -1161,7 +1214,8 @@ function SalesContent() {
                             <td className="py-3 px-4 text-right font-bold text-primary whitespace-nowrap">
                               RS {(sale.totalAmount || 0).toFixed(2)}
                             </td>
-                            <td className="py-3 px-4 text-muted-foreground">{sale.userName || "Unknown"}</td>
+                            {canManageSales && <td className="py-3 px-4 text-muted-foreground">{sale.userName || "Unknown"}</td>}
+                            {canManageSales && (
                             <td className="py-3 px-4 text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -1187,6 +1241,7 @@ function SalesContent() {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </td>
+                            )}
                           </tr>
                         )
                       })}
@@ -1205,7 +1260,7 @@ function SalesContent() {
                         <td className="py-3 px-4 text-right font-bold text-primary whitespace-nowrap">
                           RS {filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0).toFixed(2)}
                         </td>
-                        <td colSpan={2}></td>
+                        {canManageSales && <td colSpan={2}></td>}
                       </tr>
                     </tfoot>
                   </table>

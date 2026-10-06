@@ -4,7 +4,6 @@ import type React from "react"
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { auth } from "@/lib/firebase"
-import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +13,7 @@ import { getSales, type Sale } from "@/lib/sales"
 import { getCustomerPayments, type CustomerPayment } from "@/lib/customer-payments"
 import { getCustomerBalances } from "@/lib/ledger"
 import { ReceivePaymentDialog } from "@/components/receive-payment-dialog"
+import { useCurrentUser } from "@/components/auth-guard"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,8 +28,8 @@ const EMPTY_FORM = { name: "", phone: "", address: "", notes: "" }
 
 function CustomersContent() {
   const router = useRouter()
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [customers, setCustomers] = useState<Customer[]>([])
+  const { ownerId: currentUserId, profile } = useCurrentUser()
+const [customers, setCustomers] = useState<Customer[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [payments, setPayments] = useState<CustomerPayment[]>([])
   const [paymentCustomerId, setPaymentCustomerId] = useState<string | null>(null)
@@ -41,13 +41,7 @@ function CustomersContent() {
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (!auth) return
-    const unsubscribe = onAuthStateChanged(auth, (user) => setCurrentUserId(user ? user.uid : null))
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
+useEffect(() => {
     if (currentUserId) fetchData()
   }, [currentUserId])
 
@@ -55,16 +49,24 @@ function CustomersContent() {
     if (!currentUserId) return
     try {
       setLoading(true)
+      // Balances are optional: the customer list still shows if sales or payments fail to load
       const [customerList, saleList, paymentList] = await Promise.all([
         getCustomers(currentUserId),
-        getSales(currentUserId),
-        getCustomerPayments(currentUserId),
+        getSales(currentUserId).catch((err) => {
+          console.error("Error loading sales for balances:", err)
+          return [] as Sale[]
+        }),
+        getCustomerPayments(currentUserId).catch((err) => {
+          console.error("Error loading payments for balances:", err)
+          return [] as CustomerPayment[]
+        }),
       ])
       setCustomers(customerList)
       setSales(saleList)
       setPayments(paymentList)
     } catch (err: any) {
       console.error("Error loading customers:", err)
+      console.error("Customers owner id:", currentUserId)
       setError(err.message || "Failed to load customers")
     } finally {
       setLoading(false)
@@ -160,7 +162,7 @@ function CustomersContent() {
         await updateCustomer(editingId, formData, currentUserId)
         toast.success("Customer updated")
       } else {
-        await addCustomer(formData, currentUserId, auth?.currentUser?.displayName || "System")
+        await addCustomer(formData, currentUserId, profile?.name || auth?.currentUser?.displayName || "System")
         toast.success("Customer added")
       }
       resetForm()
@@ -270,6 +272,12 @@ function CustomersContent() {
                   </Button>
                 </div>
               </form>
+            </Card>
+          )}
+
+          {error && !isAdding && (
+            <Card className="p-4 mb-4 border-red-300 bg-red-50 dark:bg-red-950/30 text-sm text-red-700 dark:text-red-300">
+              {error}
             </Card>
           )}
 

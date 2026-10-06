@@ -10,6 +10,8 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
 import { Input } from "@/components/ui/input"
+import { useCurrentUser } from "@/components/auth-guard"
+import { StaffDashboard } from "@/components/staff-dashboard"
 
 function DashboardContent() {
   const [stats, setStats] = useState({
@@ -364,6 +366,7 @@ function DashboardContent() {
 }
 
 export default function Dashboard() {
-  return <DashboardContent />
+  const { isStaff } = useCurrentUser()
+  return isStaff ? <StaffDashboard /> : <DashboardContent />
 }
  
