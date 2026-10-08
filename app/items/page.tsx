@@ -17,7 +17,14 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
-import { FileSpreadsheet, Download, Upload, Info } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { FileSpreadsheet, Download, Upload, Info, MoreVertical, Pencil, Trash2 } from "lucide-react"
 
 
 function ItemsContent() {
@@ -826,6 +833,7 @@ function ItemsContent() {
                       <div className="text-xs text-muted-foreground">Stock</div>
                       <div className="font-semibold text-lg">{item.quantity}</div>
                     </div>
+                    <ItemActions item={item} onEdit={handleEdit} onDelete={handleDelete} />
                   </div>
 
                   <div className="space-y-2 mb-3">
@@ -851,24 +859,6 @@ function ItemsContent() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-3 border-t">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => handleEdit(item)}
-                      className="flex-1"
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      onClick={() => handleDelete(item.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
                 </Card>
               ))}
 
@@ -944,25 +934,8 @@ function ItemsContent() {
                             <div className="text-[10px]">{item.updatedAt?.toDate?.()?.toLocaleTimeString() || ""}</div>
                           </div>
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-2 justify-center">
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => handleEdit(item)}
-                              className="h-8"
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950 h-8"
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
+                        <td className="py-3 px-4 text-center">
+                          <ItemActions item={item} onEdit={handleEdit} onDelete={handleDelete} />
                         </td>
                       </tr>
                     ))}
@@ -991,4 +964,36 @@ function ItemsContent() {
 
 export default function Items() {
   return <ItemsContent />
+}
+
+// Three-dots menu with the edit and delete actions for an inventory item
+function ItemActions({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: Item
+  onEdit: (item: Item) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label={`Actions for ${item.name}`}>
+          <MoreVertical className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onSelect={() => onEdit(item)}>
+          <Pencil />
+          Edit
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item.id)}>
+          <Trash2 />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
