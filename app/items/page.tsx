@@ -17,14 +17,10 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
-import { FileSpreadsheet, Download, Upload, Info, Scale } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { FileSpreadsheet, Download, Upload, Info } from "lucide-react"
 
-// Total stock in pieces (items without pieces per box count as 1 piece each)
-const getPieces = (item: Item) => item.quantity * (item.piecesPerBox || 1)
 
 function ItemsContent() {
-  const router = useRouter()
   const [items, setItems] = useState<Item[]>([])
   const [allItems, setAllItems] = useState<Item[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -218,7 +214,6 @@ function ItemsContent() {
           // Validate required fields
           const name = row.name || row.Name || row.item_name || row["Item Name"] || ""
           const quantity = Number(row.quantity || row.Quantity || 0)
-          const piecesPerBox = Math.max(1, Math.floor(Number(row.piecesPerBox || row.PiecesPerBox || 1) || 1))
           const description = row.description || row.Description || ""
           const vendor = row.vendor || row.Vendor || ""
 
@@ -284,7 +279,6 @@ function ItemsContent() {
             {
               name: name.trim(),
               quantity,
-              piecesPerBox,
               description: description.trim(),
               vendor: vendor.trim(),
             },
@@ -366,7 +360,6 @@ function ItemsContent() {
       {
         name: "Sample Item",
         quantity: 50,
-        piecesPerBox: 12,
         description: "This is a sample item description",
         vendor: "Sample Vendor",
       },
@@ -380,7 +373,6 @@ function ItemsContent() {
     worksheet["!cols"] = [
       { wch: 30 }, // name
       { wch: 10 }, // quantity
-      { wch: 12 }, // piecesPerBox
       { wch: 50 }, // description
       { wch: 30 }, // vendor
     ]
@@ -432,21 +424,20 @@ function ItemsContent() {
         item.vendor || "-",
         item.description || "-",
         item.quantity.toString(),
-        getPieces(item).toString()
       ]
     })
     
     // Add table - centered
     const startY = currentY + 6
     // Column widths (mm) must fit within the page minus 14mm margins on each side
-    const columnWidths = [24, 36, 34, 52, 18, 18]
-    const columnAligns: ("left" | "center")[] = ["center", "left", "left", "left", "center", "center"]
+    const columnWidths = [26, 40, 38, 58, 20]
+    const columnAligns: ("left" | "center")[] = ["center", "left", "left", "left", "center"]
     const tableWidth = columnWidths.reduce((total, width) => total + width, 0)
     const horizontalMargin = Math.max((pageWidth - tableWidth) / 2, 14)
 
     autoTable(doc, {
       startY,
-      head: [["SKU", "Item Name", "Vendor", "Description", "Quantity", "Pieces"]],
+      head: [["SKU", "Item Name", "Vendor", "Description", "Quantity"]],
       body: tableData,
       theme: "grid",
       tableWidth,
@@ -468,9 +459,6 @@ function ItemsContent() {
     const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
     const totalQuantityText = `Total Quantity: ${totalQuantity} units`
     doc.text(totalQuantityText, centerX, finalY + 18, { align: "center" })
-
-    const totalPieces = filteredItems.reduce((sum, item) => sum + getPieces(item), 0)
-    doc.text(`Total Pieces: ${totalPieces}`, centerX, finalY + 26, { align: "center" })
     
     
     // Save PDF
@@ -494,21 +482,12 @@ function ItemsContent() {
         {/* Header - Mobile Responsive */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Inventory Items</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Inventory</h1>
             <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Manage your product catalog</p>
           </div>
           
           {/* Action Buttons - Mobile Responsive */}
           <div className="flex flex-wrap justify-center gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => router.push("/balance")} 
-              className="gap-2 flex-1 sm:flex-initial"
-            >
-              <Scale className="h-4 w-4" />
-              <span className="hidden sm:inline">Balance Sheet</span>
-              <span className="sm:hidden">Balance</span>
-            </Button>
             <Button 
               variant="outline" 
               onClick={downloadExcelTemplate} 
@@ -579,7 +558,6 @@ function ItemsContent() {
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
                   <li><strong>name</strong> (required, max 30 chars) - Item name</li>
                   <li><strong>quantity</strong> (required, positive number) - Stock quantity</li>
-                  <li><strong>piecesPerBox</strong> (optional, defaults to 1) - Pieces in each box</li>
                   <li><strong>description</strong> (optional, max 100 chars) - Item description</li>
                   <li><strong>vendor</strong> (optional, max 30 chars) - Vendor name</li>
                 </ul>
@@ -736,24 +714,6 @@ function ItemsContent() {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Pieces per Box *</label>
-                <Input
-                  type="number"
-                  placeholder="1"
-                  min="1"
-                  value={formData.piecesPerBox}
-                  onChange={(e) => setFormData({ ...formData, piecesPerBox: Number.parseInt(e.target.value) || 0 })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Quantity in Pieces</label>
-                <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted text-sm font-semibold">
-                  {formData.quantity * formData.piecesPerBox}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Quantity × Pieces per Box</p>
-              </div>
               <div >
                 <label className="block text-sm font-medium mb-1">Vendor Name <span className="text-red-500">*</span></label>
                 <Input
@@ -865,7 +825,6 @@ function ItemsContent() {
                     <div className={`text-right ${item.quantity < 10 ? "text-red-600" : ""}`}>
                       <div className="text-xs text-muted-foreground">Stock</div>
                       <div className="font-semibold text-lg">{item.quantity}</div>
-                      <div className="text-xs text-muted-foreground">{getPieces(item)} pcs</div>
                     </div>
                   </div>
 
@@ -924,10 +883,6 @@ function ItemsContent() {
                     <span>Total Units:</span>
                     <span>{filteredItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
                   </div>
-                  <div className="flex justify-between font-semibold">
-                    <span>Total Pieces:</span>
-                    <span>{filteredItems.reduce((sum, item) => sum + getPieces(item), 0)}</span>
-                  </div>
                 </div>
               </Card>
             </div>
@@ -943,8 +898,6 @@ function ItemsContent() {
                       <th className="text-left py-3 px-4 font-semibold text-sm">Vendor</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Description</th>
                       <th className="text-right py-3 px-4 font-semibold text-sm">Quantity</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Pcs / Box</th>
-                      <th className="text-right py-3 px-4 font-semibold text-sm">Quantity in Pieces</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Created</th>
                       <th className="text-left py-3 px-4 font-semibold text-sm">Last Updated</th>
                       <th className="text-center py-3 px-4 font-semibold text-sm">Actions</th>
@@ -978,12 +931,6 @@ function ItemsContent() {
                           <span className={item.quantity < 10 ? "text-red-600 font-semibold" : ""}>
                             {item.quantity}
                           </span>
-                        </td>
-                        <td className="py-3 px-4 text-right text-sm text-muted-foreground">
-                          {item.piecesPerBox || 1}
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold">
-                          {getPieces(item)}
                         </td>
                         <td className="py-3 px-4">
                           <div className="text-xs text-muted-foreground">
@@ -1027,10 +974,6 @@ function ItemsContent() {
                       </td>
                       <td className="py-3 px-4 text-right font-semibold">
                         {filteredItems.reduce((sum, item) => sum + item.quantity, 0)} units
-                      </td>
-                      <td></td>
-                      <td className="py-3 px-4 text-right font-semibold">
-                        {filteredItems.reduce((sum, item) => sum + getPieces(item), 0)} pcs
                       </td>
                       <td colSpan={3}></td>
                     </tr>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
@@ -14,6 +14,9 @@ import { useCurrentUser } from "@/components/auth-guard"
 import { AddExpenseDialog } from "@/components/add-expense-dialog"
 import { getCustomers, saveCustomerItemPrices, type Customer } from "@/lib/customers"
 import { AddCustomerDialog } from "@/components/add-customer-dialog"
+import { Switch } from "@/components/ui/switch"
+import { addCustomerPayment, getCustomerPayments, type CustomerPayment } from "@/lib/customer-payments"
+import { getCustomerBalances } from "@/lib/ledger"
 import { DateFilter, type DatePreset } from "@/components/date-filter"
 import {
   DropdownMenu,
@@ -64,6 +67,10 @@ function SalesContent() {
   // Staff type the buyer's name; it is not linked to the admin's customer list
   const [customerName, setCustomerName] = useState("")
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false)
+  // Old credit paid back by a customer, recorded from the order summary
+  const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([])
+  const [receiveOldPayment, setReceiveOldPayment] = useState(false)
+  const [oldPaymentAmount, setOldPaymentAmount] = useState<number | "">("")
   // Sale being edited (null when recording a new sale)
   const [editingSale, setEditingSale] = useState<Sale | null>(null)
   // Set while loading a sale for editing so its saved cash/credit split isn't overwritten
@@ -113,8 +120,20 @@ function SalesContent() {
       fetchItems()
       fetchSales()
       fetchCustomers()
+      fetchCustomerPayments()
     }
   }, [authReady, currentUserId])
+
+  const fetchCustomerPayments = async () => {
+    try {
+      if (!currentUserId || isStaff) return
+      setCustomerPayments(await getCustomerPayments(currentUserId))
+    } catch (error) {
+      console.error("Error fetching customer payments:", error)
+    }
+  }
+
+  const customerBalances = useMemo(() => getCustomerBalances(sales, customerPayments), [sales, customerPayments])
 
   const fetchCustomers = async () => {
     try {
@@ -228,6 +247,11 @@ function SalesContent() {
         return saleDate >= dateFilter.start! && saleDate <= dateFilter.end!
       })
     }
+
+    // Latest sales first
+    const saleTime = (sale: Sale) =>
+      (sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)).getTime() || 0
+    filtered.sort((a, b) => (b.saleNumber || 0) - (a.saleNumber || 0) || saleTime(b) - saleTime(a))
 
     setFilteredSales(filtered)
   }, [sales, searchTerm, paymentMethodFilter, customerFilter, dateFilter])
@@ -344,6 +368,12 @@ function SalesContent() {
       return
     }
 
+    const finalOldPayment = receiveOldPayment && typeof oldPaymentAmount === "number" ? oldPaymentAmount : 0
+    if (receiveOldPayment && !(finalOldPayment > 0)) {
+      setError("Enter the old payment amount received, or turn off Receive Old Payment")
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -386,6 +416,27 @@ function SalesContent() {
             console.error("Error saving customer prices:", priceError)
           }
         }
+        // Old credit the customer paid back along with this sale
+        if (finalOldPayment > 0 && selectedCustomer && currentUserId) {
+          try {
+            await addCustomerPayment(
+              {
+                customerId: selectedCustomer.id,
+                customerName: selectedCustomer.name,
+                amount: finalOldPayment,
+                note: "Old payment received with sale",
+                date: new Date(),
+              },
+              currentUserId,
+              profile?.name || auth?.currentUser?.displayName || "System",
+            )
+            toast.success(`Old payment of RS ${finalOldPayment.toFixed(2)} recorded for ${selectedCustomer.name}`)
+            fetchCustomerPayments()
+          } catch (paymentError: any) {
+            console.error("Error recording old payment:", paymentError)
+            toast.error(`Sale saved, but the old payment could not be recorded: ${paymentError.message || paymentError}`)
+          }
+        }
         setSuccess(
           editingSale
             ? `Sale #${(editingSale.saleNumber || 0).toString().padStart(4, "0")} updated successfully!`
@@ -403,6 +454,8 @@ function SalesContent() {
         setSelectedCustomerId("")
         setCustomerName("")
         setDescription("")
+        setReceiveOldPayment(false)
+        setOldPaymentAmount("")
         fetchItems(null)
         fetchSales() // Refresh sales list
         
@@ -484,6 +537,8 @@ function SalesContent() {
     setSelectedCustomerId("")
     setCustomerName("")
     setDescription("")
+    setReceiveOldPayment(false)
+    setOldPaymentAmount("")
     setError("")
     setSuccess("")
   }
@@ -596,7 +651,7 @@ function SalesContent() {
       }
       
       return [
-        `#${(index + 1).toString().padStart(4, '0')}`,
+        `#${(sale.saleNumber || index + 1).toString().padStart(4, '0')}`,
         date,
         sale.type.toUpperCase(),
         sale.purchaserName || "-",
@@ -1073,6 +1128,52 @@ function SalesContent() {
                 )}
               </div>
 
+
+              {/* Receive old payment: customer paying back earlier credit along with this sale */}
+              {!isStaff && (
+                <div className="mb-6 p-4 bg-muted/30 rounded-lg border border-border">
+                  <label className="flex items-center justify-between gap-2 cursor-pointer">
+                    <span className="text-sm font-semibold">Receive Old Payment</span>
+                    <Switch
+                      checked={receiveOldPayment}
+                      onCheckedChange={(checked) => {
+                        setReceiveOldPayment(checked)
+                        if (!checked) setOldPaymentAmount("")
+                      }}
+                    />
+                  </label>
+                  {receiveOldPayment && (
+                    <div className="mt-3">
+                      {selectedCustomer ? (
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Outstanding balance:{" "}
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            RS {(customerBalances[selectedCustomer.id] || 0).toFixed(2)}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mb-2">Select a customer first</p>
+                      )}
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Amount received (RS)"
+                        value={oldPaymentAmount}
+                        onChange={(e) => setOldPaymentAmount(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                        className="font-semibold"
+                      />
+                      {selectedCustomer &&
+                        typeof oldPaymentAmount === "number" &&
+                        oldPaymentAmount > (customerBalances[selectedCustomer.id] || 0) && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            More than the outstanding balance; the extra will show as an advance.
+                          </p>
+                        )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <Button onClick={handleCompleteSale} disabled={isLoading || cart.length === 0} className="w-full">
                 {isLoading ? "Processing..." : editingSale ? "Update Sale" : "Complete Sale"}

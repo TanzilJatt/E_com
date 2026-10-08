@@ -35,7 +35,7 @@ const NAV_LINKS: {
 }[] = [
   { href: "/", label: "Dashboard", icon: Home, staff: true },
   { href: "/my-inventory", label: "My Inventory", icon: Package, staffOnly: true },
-  { href: "/items", label: "Items", icon: Package },
+  { href: "/items", label: "Inventory", icon: Package },
   { href: "/sales", label: "Sales", icon: ShoppingCart, staff: true },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/ledger", label: "Ledger", icon: BookOpen },
