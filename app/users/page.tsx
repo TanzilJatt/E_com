@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreVertical, Pencil, Trash2, ChevronRight } from "lucide-react"
+import { MoreVertical, Pencil, Trash2 } from "lucide-react"
 import { useCurrentUser } from "@/components/auth-guard"
 import { AddStaffDialog, DeleteStaffDialog, EditStaffDialog } from "@/components/staff-dialogs"
 import { getStaffMembers, type UserProfile } from "@/lib/users"
@@ -176,7 +176,6 @@ export default function UsersPage() {
                         <td className="py-3 px-4">
                           <div className="flex items-center justify-end gap-1">
                             {renderActions(member)}
-                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
                           </div>
                         </td>
                       </tr>

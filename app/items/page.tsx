@@ -713,12 +713,17 @@ function ItemsContent() {
               <div>
                 <label className="block text-sm font-medium mb-1">Quantity *</label>
                 <Input
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  value={formData.quantity}
-                  onChange={(e) => setFormData({ ...formData, quantity: Number.parseInt(e.target.value) || 0 })}
-                  required
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Enter quantity"
+                  value={formData.quantity === 0 ? "" : formData.quantity}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // Only allow digits
+                    if (/^\d*$/.test(value)) {
+                      setFormData({ ...formData, quantity: Number.parseInt(value) || 0 })
+                    }
+                  }}
                 />
               </div>
               <div >
