@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { auth } from "@/lib/firebase"
 import { Timestamp } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,7 +20,7 @@ import {
   type Expense,
 } from "@/lib/expenses"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -37,7 +38,7 @@ function ExpensesContent() {
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
   const [formData, setFormData] = useState({
     name: "",
     category: "Other",
@@ -479,18 +480,13 @@ function ExpensesContent() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full sm:max-w-md h-9"
           />
-          <select
+          <FilterSelect
             value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full sm:w-auto border border-input rounded-lg p-2 bg-background text-foreground"
-          >
-            <option value="All">All Categories</option>
-            {EXPENSE_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
+            onValueChange={setSelectedCategory}
+            options={[{ value: "All", label: "All Categories" }, ...EXPENSE_CATEGORIES.map((cat) => ({ value: cat, label: cat }))]}
+            className="w-full sm:w-auto"
+            aria-label="Category"
+          />
           <Button 
             onClick={exportExpensesToPDF} 
             disabled={filteredExpenses.length === 0}

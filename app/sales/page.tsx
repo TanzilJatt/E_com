@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect, PAYMENT_METHOD_OPTIONS } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,7 +18,7 @@ import { AddCustomerDialog } from "@/components/add-customer-dialog"
 import { Switch } from "@/components/ui/switch"
 import { addCustomerPayment, getCustomerPayments, type CustomerPayment } from "@/lib/customer-payments"
 import { getCustomerBalances } from "@/lib/ledger"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,7 +87,7 @@ function SalesContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
   const [customerFilter, setCustomerFilter] = useState("all")
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
   const [loading, setLoading] = useState(false)
 
   // Listen for auth state changes
@@ -1197,30 +1198,24 @@ function SalesContent() {
                 className="h-9 w-full sm:w-64 text-sm"
               />
               {!isStaff && (
-              <select
+              <FilterSelect
                 value={customerFilter}
-                onChange={(e) => setCustomerFilter(e.target.value)}
-                className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none max-w-[180px]"
-              >
-                <option value="all">All Customers</option>
-                <option value="none">No customer (older sales)</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setCustomerFilter}
+                options={[
+                  { value: "all", label: "All Customers" },
+                  { value: "none", label: "No customer (older sales)" },
+                  ...customers.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                className="max-w-[180px]"
+                aria-label="Customer"
+              />
               )}
-              <select
+              <FilterSelect
                 value={paymentMethodFilter}
-                onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-                className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
-              >
-                <option value="all">All Methods</option>
-                <option value="cash">Cash Only</option>
-                <option value="credit">Credit Only</option>
-                <option value="both">Cash + Credit</option>
-              </select>
+                onValueChange={(value) => setPaymentMethodFilter(value as any)}
+                options={PAYMENT_METHOD_OPTIONS}
+                aria-label="Payment method"
+              />
               <DateFilter compact onFilter={handleDateFilter} />
             </div>
 

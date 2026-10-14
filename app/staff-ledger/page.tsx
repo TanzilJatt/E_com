@@ -4,6 +4,7 @@ import type React from "react"
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import { useCurrentUser } from "@/components/auth-guard"
 import { getStaffMembers, type UserProfile } from "@/lib/users"
 import { getStaffSales } from "@/lib/sales"
@@ -56,7 +57,7 @@ function StaffLedgerContent() {
   const [entries, setEntries] = useState<StaffLedgerEntry[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
 
   // Receive cash dialog (admin)
   const [isCashOpen, setIsCashOpen] = useState(false)
@@ -251,9 +252,6 @@ function StaffLedgerContent() {
     doc.save(`staff-ledger-${staffName.replace(/\s+/g, "-").toLowerCase()}-${today()}.pdf`)
   }
 
-  const selectClass =
-    "h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none max-w-[200px]"
-
   return (
     <>
       <Navbar />
@@ -282,14 +280,14 @@ function StaffLedgerContent() {
           <div className="mb-6">
             <DateFilter compact onFilter={handleDateFilter}>
               {!isStaff && (
-                <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className={selectClass}>
-                  {staff.length === 0 && <option value="">No staff yet</option>}
-                  {staff.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
+                <FilterSelect
+                  value={staffId}
+                  onValueChange={setStaffId}
+                  options={staff.map((member) => ({ value: member.id, label: member.name }))}
+                  placeholder="No staff yet"
+                  className="max-w-[200px]"
+                  aria-label="Staff member"
+                />
               )}
             </DateFilter>
           </div>

@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react"
 import { getActivityLogs, type ActivityLog } from "@/lib/activity-logs"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 
 export default function ActivityLogsPage() {
-  const [logs, setLogs] = useState<ActivityLog[]>([])
   const [allLogs, setAllLogs] = useState<ActivityLog[]>([])
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
   const [loading, setLoading] = useState(true)
   const [filterAction, setFilterAction] = useState<string>("all")
 
@@ -21,7 +22,6 @@ export default function ActivityLogsPage() {
       setLoading(true)
       const logsList = await getActivityLogs()
       setAllLogs(logsList)
-      setLogs(logsList)
     } catch (error) {
       console.error("Error fetching logs:", error)
     } finally {
@@ -30,21 +30,14 @@ export default function ActivityLogsPage() {
   }
 
   const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
-    if (!startDate || !endDate) {
-      setLogs(allLogs)
-      return
-    }
-
-    const filtered = allLogs.filter((log) => {
-      const logDate = log.timestamp?.toDate?.()
-      if (!logDate) return false
-      return logDate >= startDate && logDate <= endDate
-    })
-    
-    setLogs(filtered)
+    setDateFilter({ start: startDate, end: endDate })
   }
 
-  const filteredLogs = logs.filter((log) => {
+  const filteredLogs = allLogs.filter((log) => {
+    if (dateFilter.start && dateFilter.end) {
+      const logDate = log.timestamp?.toDate?.()
+      if (!logDate || logDate < dateFilter.start || logDate > dateFilter.end) return false
+    }
     if (filterAction === "all") return true
     return log.action === filterAction
   })
@@ -92,24 +85,25 @@ export default function ActivityLogsPage() {
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <label className="block text-sm font-medium mb-2">Filter by Action</label>
-              <select
+              <FilterSelect
                 value={filterAction}
-                onChange={(e) => setFilterAction(e.target.value)}
-                className="w-full border border-input rounded-lg p-2 bg-background text-foreground"
-              >
-                <option value="all">All Actions</option>
-                <option value="ITEM_ADDED">Item Added</option>
-                <option value="ITEM_UPDATED">Item Updated</option>
-                <option value="ITEM_DELETED">Item Deleted</option>
-                <option value="SALE_COMPLETED">Sale Completed</option>
-                <option value="SALE_UPDATED">Sale Updated</option>
-                <option value="SALE_DELETED">Sale Deleted</option>
-                <option value="CUSTOMER_ADDED">Customer Added</option>
-                <option value="CUSTOMER_UPDATED">Customer Updated</option>
-                <option value="CUSTOMER_DELETED">Customer Deleted</option>
-                <option value="USER_LOGIN">User Login</option>
-                <option value="USER_LOGOUT">User Logout</option>
-              </select>
+                onValueChange={setFilterAction}
+                options={[
+                  { value: "all", label: "All Actions" },
+                  { value: "ITEM_ADDED", label: "Item Added" },
+                  { value: "ITEM_UPDATED", label: "Item Updated" },
+                  { value: "ITEM_DELETED", label: "Item Deleted" },
+                  { value: "SALE_COMPLETED", label: "Sale Completed" },
+                  { value: "SALE_UPDATED", label: "Sale Updated" },
+                  { value: "SALE_DELETED", label: "Sale Deleted" },
+                  { value: "CUSTOMER_ADDED", label: "Customer Added" },
+                  { value: "CUSTOMER_UPDATED", label: "Customer Updated" },
+                  { value: "CUSTOMER_DELETED", label: "Customer Deleted" },
+                  { value: "USER_LOGIN", label: "User Login" },
+                  { value: "USER_LOGOUT", label: "User Logout" },
+                ]}
+                className="w-full h-10 rounded-lg"
+              />
             </div>
           </div>
         </Card>

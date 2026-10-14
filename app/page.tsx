@@ -4,11 +4,12 @@ import { useEffect, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs, query, orderBy } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect, PAYMENT_METHOD_OPTIONS } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import { Input } from "@/components/ui/input"
 import { useCurrentUser } from "@/components/auth-guard"
 import { StaffDashboard } from "@/components/staff-dashboard"
@@ -30,7 +31,7 @@ function DashboardContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "retail" | "box">("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<"all" | "cash" | "credit" | "both">("all")
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -165,25 +166,22 @@ function DashboardContent() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-9 w-48 text-sm"
           />
-          <select
+          <FilterSelect
             value={saleTypeFilter}
-            onChange={(e) => setSaleTypeFilter(e.target.value as any)}
-            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
-          >
-            <option value="all">All Types</option>
-            <option value="retail">Retail</option>
-            <option value="box">Box Purchase</option>
-          </select>
-          <select
+            onValueChange={(value) => setSaleTypeFilter(value as any)}
+            options={[
+              { value: "all", label: "All Types" },
+              { value: "retail", label: "Retail" },
+              { value: "box", label: "Box Purchase" },
+            ]}
+            aria-label="Sale type"
+          />
+          <FilterSelect
             value={paymentMethodFilter}
-            onChange={(e) => setPaymentMethodFilter(e.target.value as any)}
-            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
-          >
-            <option value="all">All Methods</option>
-            <option value="cash">Cash Only</option>
-            <option value="credit">Credit Only</option>
-            <option value="both">Cash + Credit</option>
-          </select>
+            onValueChange={(value) => setPaymentMethodFilter(value as any)}
+            options={PAYMENT_METHOD_OPTIONS}
+            aria-label="Payment method"
+          />
           <DateFilter compact onFilter={handleDateFilter} />
           <span className="text-xs text-muted-foreground ml-auto">
             {filteredSales.length} of {recentSales.length} sales

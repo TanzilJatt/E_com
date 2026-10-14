@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { FilterSelect } from "@/components/filter-select"
 
 export type DatePreset = 
   | "today" 
@@ -16,6 +17,18 @@ export type DatePreset =
   | "last_year"
   | "custom"
 
+const PRESET_OPTIONS: { value: DatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "this_week", label: "This Week" },
+  { value: "last_week", label: "Last Week" },
+  { value: "this_month", label: "This Month" },
+  { value: "last_month", label: "Last Month" },
+  { value: "this_year", label: "This Year" },
+  { value: "last_year", label: "Last Year" },
+  { value: "custom", label: "Custom Range" },
+]
+
 interface DateFilterProps {
   onFilter: (startDate: Date | null, endDate: Date | null, preset: DatePreset) => void
   showPresets?: boolean
@@ -25,8 +38,15 @@ interface DateFilterProps {
   compact?: boolean
 }
 
+// Initial range for pages using DateFilter, matching its default "today" preset
+export function getTodayRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1) }
+}
+
 export function DateFilter({ onFilter, showPresets = true, children, compact = false }: DateFilterProps) {
-  const [preset, setPreset] = useState<DatePreset>("this_month")
+  const [preset, setPreset] = useState<DatePreset>("today")
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
 
@@ -122,10 +142,11 @@ export function DateFilter({ onFilter, showPresets = true, children, compact = f
   }
 
   const handleClearFilter = () => {
-    setPreset("this_month")
     setCustomStart("")
     setCustomEnd("")
-    onFilter(null, null, "this_month")
+    setPreset("today")
+    const { start, end } = getTodayRange()
+    onFilter(start, end, "today")
   }
 
   const formatDate = (date: Date) => {
@@ -159,22 +180,14 @@ export function DateFilter({ onFilter, showPresets = true, children, compact = f
     return (
       <div className="flex items-center gap-2 flex-wrap">
         {children}
-        <select
-          value={preset}
-          onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-          className={compactControl}
-          title={getDateRangeText(preset)}
-        >
-          <option value="today">Today</option>
-          <option value="yesterday">Yesterday</option>
-          <option value="this_week">This Week</option>
-          <option value="last_week">Last Week</option>
-          <option value="this_month">This Month</option>
-          <option value="last_month">Last Month</option>
-          <option value="this_year">This Year</option>
-          <option value="last_year">Last Year</option>
-          <option value="custom">Custom Range</option>
-        </select>
+        <span title={getDateRangeText(preset)}>
+          <FilterSelect
+            value={preset}
+            onValueChange={(value) => handlePresetChange(value as DatePreset)}
+            options={PRESET_OPTIONS}
+            aria-label="Date range"
+          />
+        </span>
         {preset === "custom" && (
           <>
             <input
@@ -211,21 +224,12 @@ export function DateFilter({ onFilter, showPresets = true, children, compact = f
           {children}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium mb-2">Filter by Date</label>
-            <select
+            <FilterSelect
               value={preset}
-              onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-              className="w-full border-2 border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg p-2 bg-background text-foreground transition-colors outline-none"
-            >
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="this_week">This Week</option>
-              <option value="last_week">Last Week</option>
-              <option value="this_month">This Month</option>
-              <option value="last_month">Last Month</option>
-              <option value="this_year">This Year</option>
-              <option value="last_year">Last Year</option>
-              <option value="custom">Custom Range</option>
-            </select>
+              onValueChange={(value) => handlePresetChange(value as DatePreset)}
+              options={PRESET_OPTIONS}
+              className="w-full h-10 border-2 rounded-lg"
+            />
           </div>
 
           {preset === "custom" && (

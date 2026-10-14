@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs, query, orderBy } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -19,7 +20,7 @@ import {
   Pie,
   Cell,
 } from "recharts"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -33,7 +34,7 @@ function ReportsContent() {
   )
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
   const [filterType, setFilterType] = useState<"all" | "box" | "retail">("all")
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
 
   useEffect(() => {
     fetchSales()
@@ -266,15 +267,16 @@ function ReportsContent() {
 
         {/* Filters */}
         <div className="mb-6 flex items-center gap-2 flex-wrap">
-          <select
+          <FilterSelect
             value={filterType}
-            onChange={(e) => setFilterType(e.target.value as "all" | "box" | "retail")}
-            className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none"
-          >
-            <option value="all">All Sales</option>
-            <option value="retail">Retail Only</option>
-            <option value="box">Box Purchase Only</option>
-          </select>
+            onValueChange={(value) => setFilterType(value as "all" | "box" | "retail")}
+            options={[
+              { value: "all", label: "All Sales" },
+              { value: "retail", label: "Retail Only" },
+              { value: "box", label: "Box Purchase Only" },
+            ]}
+            aria-label="Sale type"
+          />
           <DateFilter compact onFilter={handleDateFilter} />
           <Button size="sm" className="h-9 ml-auto" onClick={exportReportToPDF} disabled={filteredSales.length === 0}>
             Export PDF

@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation"
 import { auth } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DateFilter, type DatePreset } from "@/components/date-filter"
+import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import { ReceivePaymentDialog } from "@/components/receive-payment-dialog"
 import { getCustomers, type Customer } from "@/lib/customers"
 import { getSales, type Sale } from "@/lib/sales"
@@ -28,7 +29,7 @@ function LedgerContent() {
   const [payments, setPayments] = useState<CustomerPayment[]>([])
   const [loading, setLoading] = useState(true)
   const [customerFilter, setCustomerFilter] = useState(searchParams.get("customer") || "all")
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
+  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
   const [isPaymentOpen, setIsPaymentOpen] = useState(false)
 
   useEffect(() => {
@@ -296,18 +297,13 @@ function LedgerContent() {
 
           <div className="mb-6">
             <DateFilter compact onFilter={handleDateFilter}>
-              <select
+              <FilterSelect
                 value={customerFilter}
-                onChange={(e) => setCustomerFilter(e.target.value)}
-                className="h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none max-w-[200px]"
-              >
-                <option value="all">All Customers</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setCustomerFilter}
+                options={[{ value: "all", label: "All Customers" }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
+                className="max-w-[200px]"
+                aria-label="Customer"
+              />
             </DateFilter>
           </div>
 

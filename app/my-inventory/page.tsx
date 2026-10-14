@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Navbar } from "@/components/navbar"
+import { FilterSelect } from "@/components/filter-select"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useCurrentUser } from "@/components/auth-guard"
@@ -103,9 +104,6 @@ function MyInventoryContent() {
   const totalSold = rows.reduce((sum, r) => sum + r.sold, 0)
   const itemsInStock = rows.filter((r) => r.inHand > 0).length
 
-  const selectClass =
-    "h-9 border border-border/60 hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-2 text-sm bg-background text-foreground transition-colors outline-none max-w-[200px]"
-
   return (
     <>
       <Navbar />
@@ -148,14 +146,14 @@ function MyInventoryContent() {
               className="h-9 w-full sm:w-64 text-sm"
             />
             {!isStaff && (
-              <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className={selectClass}>
-                {staff.length === 0 && <option value="">No staff yet</option>}
-                {staff.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+              <FilterSelect
+                value={staffId}
+                onValueChange={setStaffId}
+                options={staff.map((member) => ({ value: member.id, label: member.name }))}
+                placeholder="No staff yet"
+                className="max-w-[200px]"
+                aria-label="Staff member"
+              />
             )}
           </div>
 
