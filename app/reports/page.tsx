@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs, query, orderBy } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
@@ -25,14 +25,9 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
 function ReportsContent() {
-  const [sales, setSales] = useState<any[]>([])
   const [allSales, setAllSales] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
   const [purchases, setPurchases] = useState<any[]>([])
-  const [startDate, setStartDate] = useState(
-    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-  )
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
   const [filterType, setFilterType] = useState<"all" | "box" | "retail">("all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
 
@@ -46,7 +41,7 @@ function ReportsContent() {
     try {
       const userId = auth?.currentUser?.uid
       if (!userId) return
-      
+
       const { getPurchases } = await import("@/lib/purchases")
       const purchasesList = await getPurchases(userId)
       setPurchases(purchasesList)
@@ -59,7 +54,7 @@ function ReportsContent() {
     try {
       const userId = auth?.currentUser?.uid
       if (!userId) return
-      
+
       const { getItems } = await import("@/lib/items")
       const itemsList = await getItems(userId)
       setItems(itemsList)
@@ -74,48 +69,48 @@ function ReportsContent() {
         console.error("Database is not available. Please check your Firebase configuration.")
         return
       }
-      
+
       const userId = auth?.currentUser?.uid
       if (!userId) {
         console.error("No user logged in")
         return
       }
-      
+
       // Get user-specific sales
       const { getSales } = await import("@/lib/sales")
       const salesList = await getSales(userId)
-      
+
       setAllSales(salesList)
-      setSales(salesList)
     } catch (error) {
       console.error("Error fetching sales:", error)
     }
   }
 
-  const handleDateFilter = (startDateFilter: Date | null, endDateFilter: Date | null, preset: DatePreset) => {
+  const handleDateFilter = (startDateFilter: Date | null, endDateFilter: Date | null, _preset: DatePreset) => {
     setDateFilter({ start: startDateFilter, end: endDateFilter })
-    
-    if (!startDateFilter || !endDateFilter) {
-      setSales(allSales)
-      return
-    }
-
-    const filtered = allSales.filter((sale) => {
-      const saleDate = sale.createdAt?.toDate?.()
-      if (!saleDate) return false
-      return saleDate >= startDateFilter && saleDate <= endDateFilter
-    })
-    
-    setSales(filtered)
   }
 
-  const filteredSales = sales.filter((sale) => {
-    const saleDate = sale.createdAt?.toDate?.()?.toISOString().split("T")[0] || ""
-    const inDateRange = saleDate >= startDate && saleDate <= endDate
-    const typeMatch = filterType === "all" || sale.type === filterType
-    return inDateRange && typeMatch
-  })
+  // Sale date as recorded (same date the Sales page and Dashboard filter on)
+  const saleDateOf = (sale: any): Date => {
+    const value = sale.transactionDate || sale.createdAt
+    return value?.toDate ? value.toDate() : new Date(value)
+  }
 
+  // Every sale (admin and staff) matching the date and type filters, newest first
+  const filteredSales = useMemo(
+    () =>
+      allSales
+        .filter((sale) => {
+          if (filterType !== "all" && sale.type !== filterType) return false
+          if (dateFilter.start && dateFilter.end) {
+            const saleDate = saleDateOf(sale)
+            return saleDate >= dateFilter.start && saleDate <= dateFilter.end
+          }
+          return true
+        })
+        .sort((a, b) => saleDateOf(b).getTime() - saleDateOf(a).getTime()),
+    [allSales, filterType, dateFilter]
+  )
   // Calculate stats
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
   const totalTransactions = filteredSales.length
@@ -127,16 +122,18 @@ function ReportsContent() {
   // Chart data - daily revenue
   const dailyData: { [key: string]: number } = {}
   filteredSales.forEach((sale) => {
-    const date = sale.createdAt?.toDate?.()?.toISOString().split("T")[0] || ""
+    const d = saleDateOf(sale)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
     dailyData[date] = (dailyData[date] || 0) + (sale.totalAmount || 0)
   })
 
+  // Sorted by the date key before formatting, so days stay in calendar order
   const chartData = Object.entries(dailyData)
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, revenue]) => ({
-      date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      date: new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       revenue,
     }))
-    .sort((a, b) => a.date.localeCompare(b.date))
 
   // Sales by type
   const saleTypeData = [
@@ -146,11 +143,11 @@ function ReportsContent() {
 
   const exportReportToPDF = () => {
     const doc = new jsPDF()
-    
+
     // Add title
     doc.setFontSize(18)
     doc.text("Sales Report & Analysis", 14, 22)
-    
+
     // Add date range and filters
     doc.setFontSize(10)
     if (dateFilter.start && dateFilter.end) {
@@ -160,24 +157,20 @@ function ReportsContent() {
         30
       )
     } else {
-      doc.text(
-        `Report Period: ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`,
-        14,
-        30
-      )
+      doc.text("Report Period: All dates", 14, 30)
     }
-    
+
     if (filterType !== "all") {
       doc.text(`Sale Type: ${filterType.toUpperCase()}`, 14, 36)
     }
-    
+
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, filterType !== "all" ? 42 : 36)
-    
+
     // Add summary statistics
     doc.setFontSize(14)
     const statsY = filterType !== "all" ? 52 : 46
     doc.text("Summary Statistics", 14, statsY)
-    
+
     doc.setFontSize(10)
     doc.text(`Total Revenue: RS ${totalRevenue.toFixed(2)}`, 14, statsY + 8)
     doc.text(`Total Transactions: ${totalTransactions}`, 14, statsY + 14)
@@ -185,18 +178,18 @@ function ReportsContent() {
     doc.text(`Retail Sales: ${retailCount} (${((retailCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 26)
     doc.text(`Box Sales: ${boxCount} (${((boxCount / totalTransactions) * 100 || 0).toFixed(1)}%)`, 14, statsY + 32)
     doc.text(`Total Amount Spent: RS ${totalAmountSpent.toFixed(2)}`, 14, statsY + 38)
-    
+
     // Add sales table
     doc.setFontSize(12)
     doc.text("Sales Transactions", 14, statsY + 42)
-    
+
     const tableData = filteredSales.map((sale) => {
-      const date = sale.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"
-      
-      const itemsList = sale.items?.map((item: any) => 
-        `${item.name} (x${item.quantity})`
+      const date = saleDateOf(sale).toLocaleDateString()
+
+      const itemsList = sale.items?.map((item: any) =>
+        `${item.itemName || item.name} (x${item.quantity})`
       ).join(", ") || "No items"
-      
+
       let paymentInfo = ""
       if (sale.paymentMethod) {
         if (sale.paymentMethod.cash && sale.paymentMethod.credit) {
@@ -209,7 +202,7 @@ function ReportsContent() {
       } else {
         paymentInfo = "N/A"
       }
-      
+
       return [
         date,
         sale.type?.toUpperCase() || "N/A",
@@ -218,7 +211,7 @@ function ReportsContent() {
         `RS ${(sale.totalAmount || 0).toFixed(2)}`
       ]
     })
-    
+
     autoTable(doc, {
       startY: statsY + 48,
       head: [["Date", "Type", "Items", "Payment", "Amount"]],
@@ -234,13 +227,13 @@ function ReportsContent() {
         4: { cellWidth: 25 }
       }
     })
-    
+
     // Add daily revenue breakdown
     const finalY = (doc as any).lastAutoTable.finalY || statsY + 48
     if (finalY < 250) {
       doc.setFontSize(12)
       doc.text("Daily Revenue Breakdown", 14, finalY + 10)
-      
+
       doc.setFontSize(9)
       let yPos = finalY + 16
       chartData.slice(0, 10).forEach((item) => {
@@ -249,7 +242,7 @@ function ReportsContent() {
         if (yPos > 280) return // Prevent overflow
       })
     }
-    
+
     // Save PDF
     const fileName = `sales-report-${new Date().toISOString().split("T")[0]}.pdf`
     doc.save(fileName)
@@ -383,9 +376,9 @@ function ReportsContent() {
                 </tr>
               </thead>
               <tbody>
-                {filteredSales.slice(0, 10).map((sale) => (
+                {filteredSales.map((sale) => (
                   <tr key={sale.id} className="border-b border-border hover:bg-muted">
-                    <td className="py-3 px-2 text-xs">{sale.createdAt?.toDate?.()?.toLocaleDateString() || "N/A"}</td>
+                    <td className="py-3 px-2 text-xs">{saleDateOf(sale).toLocaleDateString()}</td>
                     <td className="py-3 px-2">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${sale.type === "box"

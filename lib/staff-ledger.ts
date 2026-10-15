@@ -4,6 +4,7 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  updateDoc,
   getDocs,
   query,
   where,
@@ -21,9 +22,14 @@ export interface StaffPayment {
   staffName: string
   amount: number
   note?: string
+  // Cash returned by staff waits for the admin to confirm it; older records have no status and count as confirmed
+  status?: "pending" | "confirmed"
+  confirmedAt?: Timestamp
   date: Timestamp
   createdAt: Timestamp
 }
+
+export const isPendingPayment = (payment: StaffPayment) => payment.status === "pending"
 
 // Stock sent to (+) or taken back from (-) a staff member
 export interface StockTransfer {
@@ -53,6 +59,13 @@ export async function getStaffPayments(staffId: string, adminId?: string): Promi
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as StaffPayment)
 }
 
+// Every cash handover from all of an admin's staff
+export async function getAdminStaffPayments(adminId: string): Promise<StaffPayment[]> {
+  if (!db) return []
+  const snapshot = await getDocs(query(collection(db, "staffPayments"), where("adminId", "==", adminId)))
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as StaffPayment)
+}
+
 export async function getStaffExpenses(staffId: string): Promise<Expense[]> {
   if (!db) return []
   const snapshot = await getDocs(query(collection(db, "expenses"), where("staffId", "==", staffId)))
@@ -66,6 +79,7 @@ export async function addStaffPayment(data: {
   amount: number
   note?: string
   date: Date
+  pending?: boolean // staff returning cash: waits for the admin to confirm
 }): Promise<string> {
   if (!db) {
     throw new Error("Database is not available. Please check your Firebase configuration and restart the dev server.")
@@ -79,10 +93,16 @@ export async function addStaffPayment(data: {
     staffName: data.staffName,
     amount: data.amount,
     note: data.note?.trim() || "",
+    status: data.pending ? "pending" : "confirmed",
     date: Timestamp.fromDate(data.date),
     createdAt: Timestamp.now(),
   })
   return docRef.id
+}
+
+// Admin confirms they received cash returned by a staff member
+export async function confirmStaffPayment(paymentId: string): Promise<void> {
+  await updateDoc(doc(db, "staffPayments", paymentId), { status: "confirmed", confirmedAt: Timestamp.now() })
 }
 
 export async function deleteStaffPayment(paymentId: string): Promise<void> {
@@ -100,6 +120,7 @@ export interface StaffLedgerEntry {
   cashIn: number // cash taken from customers
   credit: number // sold on credit (goes to the customer's balance, not the shop's cash)
   cashOut: number // expenses paid and cash handed to admin
+  pendingAmount: number // cash returned but not yet confirmed by the admin (not in cashOut)
   stockBalance: number // boxes with the staff member after this entry
   cashBalance: number // cash in hand after this entry
   sourceId: string // id of the sale / expense / transfer / payment
@@ -115,7 +136,7 @@ export function buildStaffLedger(
   payments: StaffPayment[],
 ): StaffLedgerEntry[] {
   const entries: Omit<StaffLedgerEntry, "stockBalance" | "cashBalance">[] = []
-  const blank = { boxesIn: 0, boxesOut: 0, cashIn: 0, credit: 0, cashOut: 0 }
+  const blank = { boxesIn: 0, boxesOut: 0, cashIn: 0, credit: 0, cashOut: 0, pendingAmount: 0 }
 
   for (const t of transfers) {
     const sent = t.quantity > 0
@@ -164,14 +185,16 @@ export function buildStaffLedger(
   }
 
   for (const payment of payments) {
+    const pending = isPendingPayment(payment)
     entries.push({
       ...blank,
       id: `handover-${payment.id}`,
       kind: "handover",
       date: toDate(payment.date),
-      reference: "Cash to admin",
+      reference: pending ? "Cash to admin (pending)" : "Cash to admin",
       details: payment.note || "Cash handed over",
-      cashOut: payment.amount || 0,
+      cashOut: pending ? 0 : payment.amount || 0,
+      pendingAmount: pending ? payment.amount || 0 : 0,
       sourceId: payment.id,
     })
   }

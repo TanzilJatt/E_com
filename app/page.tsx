@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { db, auth } from "@/lib/firebase"
 import { collection, getDocs, query, orderBy } from "firebase/firestore"
 import { Navbar } from "@/components/navbar"
@@ -15,16 +15,8 @@ import { useCurrentUser } from "@/components/auth-guard"
 import { StaffDashboard } from "@/components/staff-dashboard"
 
 function DashboardContent() {
-  const [stats, setStats] = useState({
-    totalItems: 0,
-    totalSales: 0,
-    totalRevenue: 0,
-    retailSales: 0,
-    boxSales: 0,
-  })
+  const [totalItems, setTotalItems] = useState(0)
   const [allSales, setAllSales] = useState<any[]>([])
-  const [recentSales, setRecentSales] = useState<any[]>([])
-  const [filteredSales, setFilteredSales] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
 
   // Filter states
@@ -58,22 +50,8 @@ function DashboardContent() {
         // Trigger migration for existing sales
         const sales = await getSales(userId, true)
 
-        // Calculate stats
-        const totalRevenue = sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
-        const retailCount = sales.filter((s) => s.type === "retail").length
-        const boxCount = sales.filter((s) => s.type === "box").length
-
-        setStats({
-          totalItems: items.length,
-          totalSales: sales.length,
-          totalRevenue,
-          retailSales: retailCount,
-          boxSales: boxCount,
-        })
-
+        setTotalItems(items.length)
         setAllSales(sales)
-        setRecentSales(sales.slice(0, 10))
-        setFilteredSales(sales.slice(0, 10))
 
         // Create chart data
         const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -100,9 +78,12 @@ function DashboardContent() {
     fetchData()
   }, [])
 
-  // Apply filters to recent sales
-  useEffect(() => {
-    let filtered = [...recentSales]
+  const saleDateOf = (sale: any): Date =>
+    sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
+
+  // Filters apply to every sale (not just the latest few), newest first
+  const filteredSales = useMemo(() => {
+    let filtered = [...allSales]
 
     // Search filter
     if (searchTerm) {
@@ -135,13 +116,32 @@ function DashboardContent() {
     // Date filter
     if (dateFilter.start && dateFilter.end) {
       filtered = filtered.filter((sale) => {
-        const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
+        const saleDate = saleDateOf(sale)
         return saleDate >= dateFilter.start! && saleDate <= dateFilter.end!
       })
     }
 
-    setFilteredSales(filtered)
-  }, [recentSales, searchTerm, saleTypeFilter, paymentMethodFilter, dateFilter])
+    return filtered.sort((a, b) => saleDateOf(b).getTime() - saleDateOf(a).getTime())
+  }, [allSales, searchTerm, saleTypeFilter, paymentMethodFilter, dateFilter])
+
+  // Summary cards follow the same filters as the list
+  const stats = useMemo(() => {
+    const quantity = (list: any[]) =>
+      list.reduce((sum, sale) => sum + (sale.items || []).reduce((q: number, item: any) => q + (item.quantity || 0), 0), 0)
+    const retail = filteredSales.filter((s) => s.type === "retail")
+    const box = filteredSales.filter((s) => s.type === "box")
+    return {
+      totalSales: filteredSales.length,
+      totalRevenue: filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0),
+      retailSales: retail.length,
+      retailUnits: quantity(retail),
+      boxSales: box.length,
+      boxUnits: quantity(box),
+    }
+  }, [filteredSales])
+
+  const RECENT_LIMIT = 10
+  const recentSales = filteredSales.slice(0, RECENT_LIMIT)
 
   const handleDateFilter = (start: Date | null, end: Date | null, preset: DatePreset) => {
     setDateFilter({ start, end })
@@ -184,7 +184,7 @@ function DashboardContent() {
           />
           <DateFilter compact onFilter={handleDateFilter} />
           <span className="text-xs text-muted-foreground ml-auto">
-            {filteredSales.length} of {recentSales.length} sales
+            {filteredSales.length} of {allSales.length} sales
           </span>
         </div>
 
@@ -192,7 +192,7 @@ function DashboardContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Items</div>
-            <div className="text-3xl font-bold text-primary mt-2">{stats.totalItems}</div>
+            <div className="text-3xl font-bold text-primary mt-2">{totalItems}</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Total Sales</div>
@@ -207,10 +207,12 @@ function DashboardContent() {
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Retail Sales</div>
             <div className="text-3xl font-bold text-primary mt-2">{stats.retailSales}</div>
+            <div className="text-xs text-muted-foreground mt-1">{stats.retailUnits} pieces</div>
           </Card>
           <Card className="p-6">
             <div className="text-sm font-medium text-muted-foreground">Box Sales</div>
             <div className="text-3xl font-bold text-primary mt-2">{stats.boxSales}</div>
+            <div className="text-xs text-muted-foreground mt-1">{stats.boxUnits} boxes</div>
           </Card>
         </div>
 
@@ -255,12 +257,19 @@ function DashboardContent() {
             {/* Recent Sales Table */}
             <Card className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Recent Sales</h2>
+                <h2 className="text-lg font-semibold">
+                  Recent Sales
+                  {filteredSales.length > RECENT_LIMIT && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      latest {RECENT_LIMIT} of {filteredSales.length}
+                    </span>
+                  )}
+                </h2>
                 <Link href="/sales">
                   <Button variant="outline" size="sm">View All</Button>
                 </Link>
               </div>
-              {filteredSales.length === 0 ? (
+              {recentSales.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No sales found matching filters</div>
               ) : (
                 <div className="overflow-x-auto">
@@ -276,7 +285,7 @@ function DashboardContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSales.map((sale, index) => {
+                      {recentSales.map((sale, index) => {
                         const saleDate = sale.transactionDate?.toDate ? sale.transactionDate.toDate() : new Date(sale.transactionDate)
                         const itemsDescription = sale.items?.map((item: any) => `${item.itemName} (${item.quantity})`).join(", ") || "No items"
 

@@ -23,6 +23,7 @@ import { getStaffSales } from "@/lib/sales"
 import {
   addStaffPayment,
   buildStaffLedger,
+  confirmStaffPayment,
   deleteStaffPayment,
   getStaffExpenses,
   getStaffPayments,
@@ -59,7 +60,7 @@ function StaffLedgerContent() {
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
 
-  // Receive cash dialog (admin)
+  // Cash handover dialog: admin receiving cash, or staff returning it at the end of the day
   const [isCashOpen, setIsCashOpen] = useState(false)
   const [cashForm, setCashForm] = useState({ amount: "", note: "", date: today() })
   const [cashError, setCashError] = useState("")
@@ -136,6 +137,23 @@ function StaffLedgerContent() {
     cash: lastEntry ? lastEntry.cashBalance : opening.cash,
     stock: lastEntry ? lastEntry.stockBalance : opening.stock,
   }
+  // Cash in hand right now, whatever period is shown
+  const cashInHandNow = entries[entries.length - 1]?.cashBalance || 0
+  // Cash returns waiting for the admin to confirm (any date)
+  const pendingReturns = entries.filter((e) => e.pendingAmount > 0)
+  const pendingTotal = sum(pendingReturns, "pendingAmount")
+  // Staff can't return cash that is already waiting for confirmation
+  const returnableCash = cashInHandNow - pendingTotal
+
+  const openCashDialog = () => {
+    setCashError("")
+    setCashForm(
+      isStaff
+        ? { amount: returnableCash > 0 ? returnableCash.toFixed(2) : "", note: "End of day cash return", date: today() }
+        : { amount: "", note: "", date: today() },
+    )
+    setIsCashOpen(true)
+  }
 
   // Stock received, returned, sold and in hand per item (all time)
   const stockSummary = useMemo(() => {
@@ -173,11 +191,19 @@ function StaffLedgerContent() {
 
   const handleReceiveCash = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!ownerId || !selectedStaff) return
+    if (!ownerId || !staffId || !selectedStaff) return
     setCashError("")
     const amount = Number.parseFloat(cashForm.amount)
     if (!(amount > 0)) {
       setCashError("Enter an amount greater than 0")
+      return
+    }
+    if (isStaff && amount > returnableCash + 0.001) {
+      setCashError(
+        pendingTotal > 0
+          ? `You can return up to ${rs(Math.max(returnableCash, 0))} (${rs(pendingTotal)} is already waiting for confirmation)`
+          : `You only have ${rs(cashInHandNow)} cash in hand`,
+      )
       return
     }
     setIsSaving(true)
@@ -185,13 +211,16 @@ function StaffLedgerContent() {
       const date = new Date(`${cashForm.date}T${new Date().toTimeString().split(" ")[0]}`)
       await addStaffPayment({
         adminId: ownerId,
-        staffId: selectedStaff.id,
+        staffId,
         staffName: selectedStaff.name,
         amount,
         note: cashForm.note,
         date,
+        pending: isStaff,
       })
-      toast.success(`Received ${rs(amount)} from ${selectedStaff.name}`)
+      toast.success(
+        isStaff ? `Cash return of ${rs(amount)} sent — waiting for the owner to confirm` : `Received ${rs(amount)} from ${selectedStaff.name}`,
+      )
       setIsCashOpen(false)
       setCashForm({ amount: "", note: "", date: today() })
       fetchData()
@@ -203,14 +232,48 @@ function StaffLedgerContent() {
   }
 
   const handleDeleteHandover = async (entry: StaffLedgerEntry) => {
-    if (!confirm(`Delete cash received of ${rs(entry.cashOut)}?`)) return
+    const pending = entry.pendingAmount > 0
+    const message = pending
+      ? isStaff
+        ? `Cancel your cash return of ${rs(entry.pendingAmount)}?`
+        : `Reject cash return of ${rs(entry.pendingAmount)}? The cash stays in ${staffName}'s hand.`
+      : `Delete cash received of ${rs(entry.cashOut)}?`
+    if (!confirm(message)) return
     try {
       await deleteStaffPayment(entry.sourceId)
-      toast.success("Entry deleted")
+      toast.success(pending ? (isStaff ? "Cash return cancelled" : "Cash return rejected") : "Entry deleted")
       fetchData()
     } catch (err: any) {
       toast.error(err.message || "Failed to delete")
     }
+  }
+
+  const handleConfirmHandover = async (entry: StaffLedgerEntry) => {
+    try {
+      await confirmStaffPayment(entry.sourceId)
+      toast.success(`Confirmed ${rs(entry.pendingAmount)} received from ${staffName}`)
+      fetchData()
+    } catch (err: any) {
+      toast.error(err.message || "Failed to confirm")
+    }
+  }
+
+  // Pending return: admin confirms or rejects, staff can cancel. Confirmed: admin can delete.
+  const handoverActions = (entry: StaffLedgerEntry) => {
+    const pending = entry.pendingAmount > 0
+    if (isStaff && !pending) return null
+    return (
+      <span className="inline-flex gap-3">
+        {!isStaff && pending && (
+          <button onClick={() => handleConfirmHandover(entry)} className="text-xs font-semibold text-green-600 hover:underline">
+            Confirm
+          </button>
+        )}
+        <button onClick={() => handleDeleteHandover(entry)} className="text-xs text-red-600 hover:underline">
+          {pending ? (isStaff ? "Cancel" : "Reject") : "Delete"}
+        </button>
+      </span>
+    )
   }
 
   const exportToPDF = () => {
@@ -269,11 +332,9 @@ function StaffLedgerContent() {
               <Button variant="outline" onClick={exportToPDF} disabled={filteredEntries.length === 0}>
                 Export PDF
               </Button>
-              {!isStaff && (
-                <Button onClick={() => setIsCashOpen(true)} disabled={!selectedStaff}>
-                  + Receive Cash
-                </Button>
-              )}
+              <Button onClick={openCashDialog} disabled={!selectedStaff}>
+                {isStaff ? "Return Cash to Owner" : "+ Receive Cash"}
+              </Button>
             </div>
           </div>
 
@@ -291,6 +352,28 @@ function StaffLedgerContent() {
               )}
             </DateFilter>
           </div>
+
+          {/* Cash returns waiting for the admin to confirm */}
+          {pendingReturns.length > 0 && (
+            <Card className="mb-6 p-4 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+              <div className="font-semibold text-amber-800 dark:text-amber-300">
+                {isStaff
+                  ? `${rs(pendingTotal)} waiting for the owner to confirm`
+                  : `${staffName} returned ${rs(pendingTotal)} — confirm when you receive it`}
+              </div>
+              <div className="mt-3 space-y-2">
+                {pendingReturns.map((entry) => (
+                  <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span>
+                      <span className="font-semibold">{rs(entry.pendingAmount)}</span>
+                      <span className="text-muted-foreground"> · {entry.date.toLocaleString()} · {entry.details}</span>
+                    </span>
+                    {handoverActions(entry)}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Summary */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
@@ -400,7 +483,7 @@ function StaffLedgerContent() {
                           <th className="text-right py-2 px-4 font-semibold">Credit</th>
                           <th className="text-right py-2 px-4 font-semibold">Cash Out</th>
                           <th className="text-right py-2 px-4 font-semibold">Cash in Hand</th>
-                          {!isStaff && <th className="py-2 px-4"></th>}
+                          <th className="py-2 px-4"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -421,22 +504,21 @@ function StaffLedgerContent() {
                             <td className="py-2 px-4 text-right">{entry.boxesOut || "—"}</td>
                             <td className="py-2 px-4 text-right text-green-600">{entry.cashIn ? rs(entry.cashIn) : "—"}</td>
                             <td className="py-2 px-4 text-right text-amber-600">{entry.credit ? rs(entry.credit) : "—"}</td>
-                            <td className="py-2 px-4 text-right text-red-600">{entry.cashOut ? rs(entry.cashOut) : "—"}</td>
+                            <td className="py-2 px-4 text-right text-red-600">
+                              {entry.cashOut ? (
+                                rs(entry.cashOut)
+                              ) : entry.pendingAmount ? (
+                                <span className="text-muted-foreground">{rs(entry.pendingAmount)} pending</span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
                             <td className={`py-2 px-4 text-right font-semibold ${entry.cashBalance < 0 ? "text-red-600" : ""}`}>
                               {rs(entry.cashBalance)}
                             </td>
-                            {!isStaff && (
-                              <td className="py-2 px-4 text-right">
-                                {entry.kind === "handover" && (
-                                  <button
-                                    onClick={() => handleDeleteHandover(entry)}
-                                    className="text-xs text-red-600 hover:underline"
-                                  >
-                                    Delete
-                                  </button>
-                                )}
-                              </td>
-                            )}
+                            <td className="py-2 px-4 text-right whitespace-nowrap">
+                              {entry.kind === "handover" && handoverActions(entry)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -447,13 +529,14 @@ function StaffLedgerContent() {
             </div>
           )}
 
-          {/* Receive cash from staff (admin) */}
+          {/* Receive cash from staff (admin) / return cash to owner (staff) */}
           <Dialog open={isCashOpen} onOpenChange={(open) => !isSaving && setIsCashOpen(open)}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Receive Cash from {staffName}</DialogTitle>
+                <DialogTitle>{isStaff ? "Return Cash to Owner" : `Receive Cash from ${staffName}`}</DialogTitle>
                 <DialogDescription>
-                  Cash in hand with {staffName}: <span className="font-semibold">{rs(closing.cash)}</span>
+                  {isStaff ? "Your cash in hand" : `Cash in hand with ${staffName}`}:{" "}
+                  <span className="font-semibold">{rs(cashInHandNow)}</span>
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleReceiveCash} className="space-y-4">

@@ -1,26 +1,28 @@
 import type { Sale } from "./sales"
 import type { CustomerPayment } from "./customer-payments"
+import { isPendingPayment, type StaffPayment } from "./staff-ledger"
 
 export interface LedgerEntry {
   id: string
-  kind: "sale" | "payment"
+  kind: "sale" | "payment" | "staffCash"
   date: Date
-  customerId: string
-  customerName: string
-  reference: string // "Sale #0012" or "Payment"
+  customerId: string // empty for cash from staff
+  customerName: string // staff name for cash from staff
+  reference: string // "Sale #0012", "Payment" or "Cash from staff"
   details: string
   total: number // sale total (0 for payments)
   cash: number // cash paid at time of sale
   credit: number // amount added to the customer's balance
   paymentReceived: number // amount removed from the customer's balance
+  staffCash: number // confirmed cash handed over by a staff member (no customer balance)
   balance: number // customer's balance after this entry
 }
 
 const toDate = (value: any): Date => (value?.toDate ? value.toDate() : new Date(value))
 
 // Build every customer's ledger in date order with a running balance per customer.
-// Only sales linked to a customer are included.
-export function buildLedger(sales: Sale[], payments: CustomerPayment[]): LedgerEntry[] {
+// Only sales linked to a customer are included, plus cash from staff once the admin confirms it.
+export function buildLedger(sales: Sale[], payments: CustomerPayment[], staffPayments: StaffPayment[] = []): LedgerEntry[] {
   const entries: Omit<LedgerEntry, "balance">[] = []
 
   for (const sale of sales) {
@@ -39,6 +41,7 @@ export function buildLedger(sales: Sale[], payments: CustomerPayment[]): LedgerE
       cash,
       credit,
       paymentReceived: 0,
+      staffCash: 0,
     })
   }
 
@@ -55,6 +58,25 @@ export function buildLedger(sales: Sale[], payments: CustomerPayment[]): LedgerE
       cash: 0,
       credit: 0,
       paymentReceived: payment.amount,
+      staffCash: 0,
+    })
+  }
+
+  for (const payment of staffPayments) {
+    if (isPendingPayment(payment)) continue
+    entries.push({
+      id: `staffcash-${payment.id}`,
+      kind: "staffCash",
+      date: toDate(payment.date),
+      customerId: "",
+      customerName: payment.staffName,
+      reference: "Cash from staff",
+      details: payment.note || "Cash handed over",
+      total: 0,
+      cash: 0,
+      credit: 0,
+      paymentReceived: 0,
+      staffCash: payment.amount || 0,
     })
   }
 

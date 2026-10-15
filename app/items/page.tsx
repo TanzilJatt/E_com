@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { addItem, updateItem, deleteItem, type Item } from "@/lib/items"
 import { logActivity } from "@/lib/activity-logs"
-import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
@@ -29,7 +28,6 @@ import { FileSpreadsheet, Download, Upload, Info, MoreVertical, Pencil, Trash2 }
 
 function ItemsContent() {
   const [items, setItems] = useState<Item[]>([])
-  const [allItems, setAllItems] = useState<Item[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -45,7 +43,6 @@ function ItemsContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, errors: [] as string[] })
   const [showImportHelp, setShowImportHelp] = useState(false)
@@ -87,16 +84,15 @@ function ItemsContent() {
         setLoading(false)
         return
       }
-      
+
       console.log("[v0] Fetching items from Firebase for user:", currentUserId)
       console.log("[v0] DB object:", db)
-      
+
       // Import getItems function instead of direct query
       const { getItems } = await import("@/lib/items")
       const itemsList = await getItems(currentUserId)
-      
+
       console.log("[v0] Fetched items:", itemsList.length)
-      setAllItems(itemsList)
       setItems(itemsList)
       setError("")
     } catch (error) {
@@ -105,23 +101,6 @@ function ItemsContent() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleDateFilter = (startDate: Date | null, endDate: Date | null, preset: DatePreset) => {
-    setDateFilter({ start: startDate, end: endDate })
-    
-    if (!startDate || !endDate) {
-      setItems(allItems)
-      return
-    }
-
-    const filtered = allItems.filter((item) => {
-      const itemDate = item.createdAt?.toDate?.()
-      if (!itemDate) return false
-      return itemDate >= startDate && itemDate <= endDate
-    })
-    
-    setItems(filtered)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -392,7 +371,7 @@ function ItemsContent() {
 
   const exportItemsToPDF = () => {
     const doc = new jsPDF()
-    
+
     // Add title - centered
     const pageWidth = doc.internal.pageSize.getWidth()
     const centerX = pageWidth / 2
@@ -400,31 +379,25 @@ function ItemsContent() {
     doc.setFontSize(18)
     const title = "Inventory Report"
     doc.text(title, centerX, 22, { align: "center" })
-    
+
     // Add date and filter info - centered
     doc.setFontSize(10)
     const generatedText = `Generated: ${new Date().toLocaleString()}`
     doc.text(generatedText, centerX, 30, { align: "center" })
-    
+
     let currentY = 36
-    if (dateFilter.start && dateFilter.end) {
-      const dateRangeText = `Date Range: ${dateFilter.start.toLocaleDateString()} - ${dateFilter.end.toLocaleDateString()}`
-      doc.text(dateRangeText, centerX, currentY, { align: "center" })
-      currentY += 6
-    }
-    
     if (searchTerm) {
       const searchText = `Search: "${searchTerm}"`
       doc.text(searchText, centerX, currentY, { align: "center" })
       currentY += 6
     }
-    
+
     // Prepare table data
     const tableData = filteredItems.map((item) => {
       const createdDate = item.createdAt?.toDate?.()
         ? new Date(item.createdAt.toDate()).toLocaleDateString()
         : "N/A"
-      
+
       return [
         item.sku,
         item.name,
@@ -433,7 +406,7 @@ function ItemsContent() {
         item.quantity.toString(),
       ]
     })
-    
+
     // Add table - centered
     const startY = currentY + 6
     // Column widths (mm) must fit within the page minus 14mm margins on each side
@@ -455,31 +428,35 @@ function ItemsContent() {
         columnWidths.map((width, i) => [i, { cellWidth: width, halign: columnAligns[i] }])
       ),
     })
-    
+
     // Add summary - centered
     const finalY = (doc as any).lastAutoTable.finalY || startY
     doc.setFontSize(12)
-    
+
     const totalItemsText = `Total Items: ${filteredItems.length}`
     doc.text(totalItemsText, centerX, finalY + 10, { align: "center" })
-    
+
     const totalQuantity = filteredItems.reduce((sum, item) => sum + item.quantity, 0)
     const totalQuantityText = `Total Quantity: ${totalQuantity} units`
     doc.text(totalQuantityText, centerX, finalY + 18, { align: "center" })
-    
-    
+
+
     // Save PDF
     const fileName = `inventory-report-${new Date().toISOString().split("T")[0]}.pdf`
     doc.save(fileName)
   }
 
-  const filteredItems = items.filter(
-    (item) => item.name.toLowerCase().includes(searchTerm.toLowerCase())
-  ).filter((item, index, self) =>
-    index === self.findIndex((i) => i.id === item.id)
-  ).filter((item, index, self) =>
-    index === self.findIndex((i) => i.id === item.id)
-  )
+  // Search by name, SKU, item number or vendor; every item once (guards against duplicate ids)
+  const search = searchTerm.trim().toLowerCase()
+  const filteredItems = items
+    .filter(
+      (item) =>
+        !search ||
+        [item.name, item.sku, item.vendor, item.itemNumber?.toString()].some((value) =>
+          value?.toLowerCase().includes(search)
+        )
+    )
+    .filter((item, index, self) => index === self.findIndex((i) => i.id === item.id))
 
   return (
     <>
@@ -492,22 +469,22 @@ function ItemsContent() {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Inventory</h1>
             <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Manage your product catalog</p>
           </div>
-          
+
           {/* Action Buttons - Mobile Responsive */}
           <div className="flex flex-wrap justify-center gap-2">
-            <Button 
-              variant="outline" 
-              onClick={downloadExcelTemplate} 
+            <Button
+              variant="outline"
+              onClick={downloadExcelTemplate}
               className="gap-2 flex-1 sm:flex-initial"
             >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download Template</span>
               <span className="sm:hidden">Download</span>
             </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => fileInputRef.current?.click()} 
-              disabled={isImporting} 
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
               className="gap-2 flex-1 sm:flex-initial"
             >
               <Upload className="h-4 w-4" />
@@ -530,8 +507,8 @@ function ItemsContent() {
               onChange={handleImportExcel}
               style={{ display: "none" }}
             />
-            <Button 
-              onClick={() => setIsAdding(!isAdding)} 
+            <Button
+              onClick={() => setIsAdding(!isAdding)}
               className="w-full sm:w-auto"
             >
               {isAdding ? "Cancel" : "+ Add Item"}
@@ -765,8 +742,8 @@ function ItemsContent() {
                 </p> */}
               </div>
               {error && <div className="md:col-span-2 text-red-600 text-sm font-medium">{error}</div>}
-              
-             
+
+
               <div className="md:col-span-2 flex gap-2">
                 <Button type="submit" className="flex-1" disabled={isSubmitting}>
                   {isSubmitting ? "Saving..." : editingId ? "Update Item" : "Add Item"}
@@ -790,7 +767,6 @@ function ItemsContent() {
           </Card>
         )}
 
-        {/* Filters */}
         <div className="mb-6 flex items-center gap-2 flex-wrap">
           <Input
             type="text"
@@ -799,7 +775,6 @@ function ItemsContent() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-9 w-full sm:w-64 text-sm"
           />
-          <DateFilter compact onFilter={handleDateFilter} />
           <Button
             size="sm"
             className="h-9 ml-auto"
@@ -900,8 +875,8 @@ function ItemsContent() {
                   </thead>
                   <tbody>
                     {filteredItems.map((item, index) => (
-                      <tr 
-                        key={item.id} 
+                      <tr
+                        key={item.id}
                         className={`border-b border-border hover:bg-muted/30 transition-colors ${
                           index % 2 === 0 ? 'bg-background' : 'bg-muted/10'
                         }`}

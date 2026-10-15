@@ -113,8 +113,22 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && (resource.data.adminId == request.auth.uid || resource.data.staffId == request.auth.uid);
       allow create: if isSignedIn() && isAdminOwner(request.resource.data.adminId);
+      // Staff returning their cash to the admin (end of day); waits for the admin to confirm
+      allow create: if isSignedIn()
+        && request.resource.data.staffId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && isStaffOf(request.resource.data.adminId);
       allow delete: if isSignedIn() && resource.data.adminId == request.auth.uid;
-      allow update: if false;
+      // Staff can cancel their own return until it's confirmed
+      allow delete: if isSignedIn()
+        && resource.data.staffId == request.auth.uid
+        && resource.data.status == 'pending';
+      // Admin confirms a pending return; nothing else can change
+      allow update: if isSignedIn()
+        && resource.data.adminId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'confirmed'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'confirmedAt']);
     }
 
     // ---------------------------------------------------------------

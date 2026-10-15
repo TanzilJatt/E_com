@@ -14,6 +14,13 @@ import { getCustomers, type Customer } from "@/lib/customers"
 import { getSales, type Sale } from "@/lib/sales"
 import { getCustomerPayments, deleteCustomerPayment, type CustomerPayment } from "@/lib/customer-payments"
 import { buildLedger, getCustomerBalances, type LedgerEntry } from "@/lib/ledger"
+import {
+  confirmStaffPayment,
+  deleteStaffPayment,
+  getAdminStaffPayments,
+  isPendingPayment,
+  type StaffPayment,
+} from "@/lib/staff-ledger"
 import { toast } from "sonner"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -27,6 +34,7 @@ function LedgerContent() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [payments, setPayments] = useState<CustomerPayment[]>([])
+  const [staffPayments, setStaffPayments] = useState<StaffPayment[]>([])
   const [loading, setLoading] = useState(true)
   const [customerFilter, setCustomerFilter] = useState(searchParams.get("customer") || "all")
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>(getTodayRange)
@@ -46,14 +54,16 @@ function LedgerContent() {
     if (!currentUserId) return
     try {
       setLoading(true)
-      const [customerList, saleList, paymentList] = await Promise.all([
+      const [customerList, saleList, paymentList, staffPaymentList] = await Promise.all([
         getCustomers(currentUserId),
         getSales(currentUserId),
         getCustomerPayments(currentUserId),
+        getAdminStaffPayments(currentUserId),
       ])
       setCustomers(customerList)
       setSales(saleList)
       setPayments(paymentList)
+      setStaffPayments(staffPaymentList)
     } catch (err: any) {
       console.error("Error loading ledger:", err)
       toast.error(err.message || "Failed to load ledger")
@@ -62,7 +72,12 @@ function LedgerContent() {
     }
   }
 
-  const ledger = useMemo(() => buildLedger(sales, payments), [sales, payments])
+  const ledger = useMemo(() => buildLedger(sales, payments, staffPayments), [sales, payments, staffPayments])
+  // Cash returns from staff waiting for the admin to confirm (any date)
+  const pendingStaffPayments = useMemo(
+    () => staffPayments.filter(isPendingPayment).sort((a, b) => a.date.toMillis() - b.date.toMillis()),
+    [staffPayments]
+  )
   const balances = useMemo(() => getCustomerBalances(sales, payments), [sales, payments])
 
   const filteredEntries = useMemo(
@@ -92,7 +107,7 @@ function LedgerContent() {
     return groups.reverse()
   }, [filteredEntries])
 
-  const sum = (entries: LedgerEntry[], field: "cash" | "credit" | "paymentReceived" | "total") =>
+  const sum = (entries: LedgerEntry[], field: "cash" | "credit" | "paymentReceived" | "staffCash" | "total") =>
     entries.reduce((total, entry) => total + entry[field], 0)
 
   // Opening balance = everything owed before the period starts; closing = opening + credit - payments in the period
@@ -102,6 +117,7 @@ function LedgerContent() {
       { customerId: string; customerName: string; opening: number; cash: number; credit: number; received: number; closing: number }
     > = {}
     for (const entry of ledger) {
+      if (entry.kind === "staffCash") continue
       if (customerFilter !== "all" && entry.customerId !== customerFilter) continue
       if (dateFilter.end && entry.date > dateFilter.end) continue
       const row = (rows[entry.customerId] ||= {
@@ -138,6 +154,8 @@ function LedgerContent() {
     return { rows: list, totals }
   }, [ledger, customers, customerFilter, dateFilter])
 
+  const staffCashTotal = sum(filteredEntries, "staffCash")
+
   const balanceColor = (value: number) => (value > 0 ? "text-red-600" : value < 0 ? "text-green-600" : "text-primary")
 
   const handleDeletePayment = async (entry: LedgerEntry) => {
@@ -148,6 +166,27 @@ function LedgerContent() {
       await fetchData()
     } catch (err: any) {
       toast.error(err.message || "Failed to delete payment")
+    }
+  }
+
+  const handleConfirmStaffPayment = async (payment: StaffPayment) => {
+    try {
+      await confirmStaffPayment(payment.id)
+      toast.success(`Confirmed ${rs(payment.amount)} received from ${payment.staffName}`)
+      await fetchData()
+    } catch (err: any) {
+      toast.error(err.message || "Failed to confirm")
+    }
+  }
+
+  const handleDeleteStaffPayment = async (paymentId: string, message: string, done: string) => {
+    if (!confirm(message)) return
+    try {
+      await deleteStaffPayment(paymentId)
+      toast.success(done)
+      await fetchData()
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete")
     }
   }
 
@@ -172,6 +211,7 @@ function LedgerContent() {
     doc.setFontSize(11)
     doc.text(`Opening Balance: ${rs(customerSummary.totals.opening)}`, pageWidth - 14, 26, { align: "right" })
     doc.text(`Closing Balance: ${rs(customerSummary.totals.closing)}`, pageWidth - 14, 32, { align: "right" })
+    if (staffCashTotal) doc.text(`Cash from Staff: ${rs(staffCashTotal)}`, pageWidth - 14, 38, { align: "right" })
 
     // One row per entry, with a bold total row after each day
     const body: string[][] = []
@@ -188,7 +228,8 @@ function LedgerContent() {
           entry.cash ? rs(entry.cash) : "-",
           entry.credit ? rs(entry.credit) : "-",
           entry.paymentReceived ? rs(entry.paymentReceived) : "-",
-          rs(entry.balance),
+          entry.staffCash ? rs(entry.staffCash) : "-",
+          entry.kind === "staffCash" ? "-" : rs(entry.balance),
         ])
       }
       dayTotalRows.add(body.length)
@@ -202,13 +243,14 @@ function LedgerContent() {
         rs(sum(day.entries, "cash")),
         rs(sum(day.entries, "credit")),
         rs(sum(day.entries, "paymentReceived")),
+        rs(sum(day.entries, "staffCash")),
         "",
       ])
     }
 
     autoTable(doc, {
       startY: 42,
-      head: [["Date", "Time", "Customer", "Entry", "Details", "Sale Total", "Cash", "Credit", "Received", "Balance"]],
+      head: [["Date", "Time", "Customer / Staff", "Entry", "Details", "Sale Total", "Cash", "Credit", "Received", "From Staff", "Balance"]],
       body,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 2 },
@@ -219,11 +261,12 @@ function LedgerContent() {
         2: { cellWidth: 34 },
         3: { cellWidth: 22 },
         4: { cellWidth: "auto" },
-        5: { cellWidth: 24, halign: "right" },
-        6: { cellWidth: 24, halign: "right" },
-        7: { cellWidth: 24, halign: "right" },
-        8: { cellWidth: 24, halign: "right" },
-        9: { cellWidth: 26, halign: "right" },
+        5: { cellWidth: 22, halign: "right" },
+        6: { cellWidth: 22, halign: "right" },
+        7: { cellWidth: 22, halign: "right" },
+        8: { cellWidth: 22, halign: "right" },
+        9: { cellWidth: 22, halign: "right" },
+        10: { cellWidth: 24, halign: "right" },
       },
       didParseCell: (data) => {
         if (data.section === "body" && dayTotalRows.has(data.row.index)) {
@@ -307,8 +350,51 @@ function LedgerContent() {
             </DateFilter>
           </div>
 
+          {/* Cash returns from staff waiting for confirmation */}
+          {pendingStaffPayments.length > 0 && (
+            <Card className="mb-6 p-4 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+              <div className="font-semibold text-amber-800 dark:text-amber-300">
+                Cash returned by staff — confirm when you receive it
+              </div>
+              <div className="mt-3 space-y-2">
+                {pendingStaffPayments.map((payment) => (
+                  <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span>
+                      <span className="font-semibold">{payment.staffName}</span>: {rs(payment.amount)}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {payment.date.toDate().toLocaleString()}
+                        {payment.note ? ` · ${payment.note}` : ""}
+                      </span>
+                    </span>
+                    <span className="inline-flex gap-3">
+                      <button
+                        onClick={() => handleConfirmStaffPayment(payment)}
+                        className="text-xs font-semibold text-green-600 hover:underline"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleDeleteStaffPayment(
+                            payment.id,
+                            `Reject cash return of ${rs(payment.amount)} from ${payment.staffName}? The cash stays in their hand.`,
+                            "Cash return rejected"
+                          )
+                        }
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Summary */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
             <Card className="p-4 sm:p-6">
               <div className="text-xs sm:text-sm font-medium text-muted-foreground">Opening Balance</div>
               <div className={`text-xl sm:text-2xl font-bold mt-1 sm:mt-2 ${balanceColor(customerSummary.totals.opening)}`}>
@@ -330,7 +416,11 @@ function LedgerContent() {
               <div className="text-xs sm:text-sm font-medium text-muted-foreground">Payments Received</div>
               <div className="text-xl sm:text-2xl font-bold text-blue-600 mt-1 sm:mt-2">{rs(customerSummary.totals.received)}</div>
             </Card>
-            <Card className="p-4 sm:p-6 col-span-2 lg:col-span-1">
+            <Card className="p-4 sm:p-6">
+              <div className="text-xs sm:text-sm font-medium text-muted-foreground">Cash from Staff</div>
+              <div className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 sm:mt-2">{rs(staffCashTotal)}</div>
+            </Card>
+            <Card className="p-4 sm:p-6">
               <div className="text-xs sm:text-sm font-medium text-muted-foreground">Closing Balance</div>
               <div className={`text-xl sm:text-2xl font-bold mt-1 sm:mt-2 ${balanceColor(customerSummary.totals.closing)}`}>
                 {rs(customerSummary.totals.closing)}
@@ -369,21 +459,27 @@ function LedgerContent() {
                       <span className="text-blue-600">
                         Received: <span className="font-semibold">{rs(sum(day.entries, "paymentReceived"))}</span>
                       </span>
+                      {sum(day.entries, "staffCash") > 0 && (
+                        <span className="text-teal-600">
+                          From staff: <span className="font-semibold">{rs(sum(day.entries, "staffCash"))}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px]">
+                    <table className="w-full min-w-[1000px]">
                       <thead>
                         <tr className="border-b border-border text-sm">
                           <th className="text-left py-2 px-4 font-semibold">Time</th>
-                          <th className="text-left py-2 px-4 font-semibold">Customer</th>
+                          <th className="text-left py-2 px-4 font-semibold">Customer / Staff</th>
                           <th className="text-left py-2 px-4 font-semibold">Entry</th>
                           <th className="text-left py-2 px-4 font-semibold">Details</th>
                           <th className="text-right py-2 px-4 font-semibold">Sale Total</th>
                           <th className="text-right py-2 px-4 font-semibold">Cash</th>
                           <th className="text-right py-2 px-4 font-semibold">Credit</th>
                           <th className="text-right py-2 px-4 font-semibold">Received</th>
+                          <th className="text-right py-2 px-4 font-semibold">From Staff</th>
                           <th className="text-right py-2 px-4 font-semibold">Balance</th>
                           <th className="py-2 px-4"></th>
                         </tr>
@@ -400,7 +496,9 @@ function LedgerContent() {
                                 className={`px-2 py-0.5 rounded text-xs font-medium ${
                                   entry.kind === "sale"
                                     ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
-                                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                    : entry.kind === "staffCash"
+                                      ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                                 }`}
                               >
                                 {entry.reference}
@@ -415,10 +513,25 @@ function LedgerContent() {
                             <td className="py-2 px-4 text-right text-blue-600">
                               {entry.paymentReceived ? rs(entry.paymentReceived) : "—"}
                             </td>
+                            <td className="py-2 px-4 text-right text-teal-600">{entry.staffCash ? rs(entry.staffCash) : "—"}</td>
                             <td className={`py-2 px-4 text-right font-semibold ${entry.balance > 0 ? "text-red-600" : ""}`}>
-                              {rs(entry.balance)}
+                              {entry.kind === "staffCash" ? "—" : rs(entry.balance)}
                             </td>
                             <td className="py-2 px-4 text-right">
+                              {entry.kind === "staffCash" && (
+                                <button
+                                  onClick={() =>
+                                    handleDeleteStaffPayment(
+                                      entry.id.replace(/^staffcash-/, ""),
+                                      `Delete cash of ${rs(entry.staffCash)} received from ${entry.customerName}? It goes back to their cash in hand.`,
+                                      "Entry deleted"
+                                    )
+                                  }
+                                  className="text-xs text-red-600 hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              )}
                               {entry.kind === "payment" && (
                                 <button
                                   onClick={() => handleDeletePayment(entry)}
