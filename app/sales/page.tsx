@@ -16,6 +16,7 @@ import { AddExpenseDialog } from "@/components/add-expense-dialog"
 import { getCustomers, saveCustomerItemPrices, type Customer } from "@/lib/customers"
 import { AddCustomerDialog } from "@/components/add-customer-dialog"
 import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { addCustomerPayment, getCustomerPayments, type CustomerPayment } from "@/lib/customer-payments"
 import { getCustomerBalances } from "@/lib/ledger"
 import { DateFilter, getTodayRange, type DatePreset } from "@/components/date-filter"
@@ -59,8 +60,10 @@ function SalesContent() {
   const [pricePerBox, setPricePerBox] = useState<number | "">("")
   const [cashPrice, setCashPrice] = useState<number | "">("")
   const [creditPrice, setCreditPrice] = useState<number | "">("")
-  const [paymentCash, setPaymentCash] = useState(true)
-  const [paymentCredit, setPaymentCredit] = useState(false)
+  // Full cash, full credit, or split between both
+  const [paymentMode, setPaymentMode] = useState<"cash" | "credit" | "both">("cash")
+  const paymentCash = paymentMode !== "credit"
+  const paymentCredit = paymentMode !== "cash"
   const [cashAmount, setCashAmount] = useState<number | "">("")
   const [creditAmount, setCreditAmount] = useState<number | "">("")
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -322,12 +325,6 @@ function SalesContent() {
   const handleRemoveFromCart = (itemId: string) => {
     const newCart = cart.filter((c) => c.itemId !== itemId)
     setCart(newCart)
-    
-    // Update payment method selections based on remaining items
-    const hasCash = newCart.some(c => c.cashPrice !== undefined)
-    const hasCredit = newCart.some(c => c.creditPrice !== undefined)
-    setPaymentCash(hasCash)
-    setPaymentCredit(hasCredit)
   }
 
   const handleCompleteSale = async () => {
@@ -355,6 +352,11 @@ function SalesContent() {
     // Validate payment method is selected
     if (!paymentCash && !paymentCredit) {
       setError("Please select at least one payment method")
+      return
+    }
+
+    if (paymentMode === "both" && !(Number(cashAmount) > 0 && Number(creditAmount) > 0)) {
+      setError("For a split payment, enter both a cash and a credit amount, or choose Full Cash / Full Credit")
       return
     }
 
@@ -448,8 +450,7 @@ function SalesContent() {
         setSelectedItemId("")
         setQuantity("")
         setPricePerBox("")
-        setPaymentCash(true)
-        setPaymentCredit(false)
+        setPaymentMode("cash")
         setCashAmount("")
         setCreditAmount("")
         setSelectedCustomerId("")
@@ -478,52 +479,48 @@ function SalesContent() {
   // Calculate grand total from cart items
   const grandTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
 
-  // Auto-fill cash amount with grand total when cart changes
+  // Fill the cash/credit amounts for a payment type
+  const applyPaymentMode = (mode: "cash" | "credit" | "both", total: number) => {
+    if (mode === "cash") {
+      setCashAmount(total > 0 ? total : "")
+      setCreditAmount("")
+    } else if (mode === "credit") {
+      setCashAmount("")
+      setCreditAmount(total > 0 ? total : "")
+    } else {
+      // Keep the cash part if it still fits, the rest goes to credit
+      const cash = typeof cashAmount === "number" && cashAmount < total ? cashAmount : ""
+      setCashAmount(cash)
+      setCreditAmount(total > 0 ? total - (cash === "" ? 0 : cash) : "")
+    }
+  }
+
+  const handlePaymentModeChange = (mode: "cash" | "credit" | "both") => {
+    setPaymentMode(mode)
+    applyPaymentMode(mode, grandTotal)
+  }
+
+  // Split payment: changing one amount sets the other to the remainder
+  const handleSplitCashChange = (value: number | "") => {
+    const cash = value === "" ? "" : Math.min(Math.max(value, 0), grandTotal)
+    setCashAmount(cash)
+    setCreditAmount(grandTotal - (cash === "" ? 0 : cash))
+  }
+
+  const handleSplitCreditChange = (value: number | "") => {
+    const credit = value === "" ? "" : Math.min(Math.max(value, 0), grandTotal)
+    setCreditAmount(credit)
+    setCashAmount(grandTotal - (credit === "" ? 0 : credit))
+  }
+
+  // Refill amounts when the cart total changes
   useEffect(() => {
     if (keepPaymentRef.current) {
       keepPaymentRef.current = false
       return
     }
-    if (cart.length > 0 && grandTotal > 0) {
-      setCashAmount(grandTotal)
-      setPaymentCash(true)
-      // Reset credit if cash equals total
-      if (grandTotal === cashAmount) {
-        setCreditAmount("")
-        setPaymentCredit(false)
-      }
-    } else {
-      setCashAmount("")
-      setCreditAmount("")
-      setPaymentCash(true)
-      setPaymentCredit(false)
-    }
+    applyPaymentMode(paymentMode, grandTotal)
   }, [grandTotal, cart.length])
-
-  // Auto-calculate credit amount when cash amount changes
-  useEffect(() => {
-    if (grandTotal > 0 && cashAmount !== "" && typeof cashAmount === 'number') {
-      const remaining = grandTotal - cashAmount
-      if (remaining > 0.01) {
-        // There's a remaining amount - set credit
-        setCreditAmount(remaining)
-        setPaymentCredit(true)
-      } else if (remaining < -0.01) {
-        // Cash amount exceeds total - reset to total
-        setCashAmount(grandTotal)
-        setCreditAmount("")
-        setPaymentCredit(false)
-      } else {
-        // Cash equals total (within tolerance)
-        setCreditAmount("")
-        setPaymentCredit(false)
-      }
-    } else if (cashAmount === "") {
-      // Cash cleared - reset
-      setCreditAmount("")
-      setPaymentCredit(false)
-    }
-  }, [cashAmount, grandTotal])
 
   const resetSaleForm = () => {
     keepPaymentRef.current = false
@@ -531,8 +528,7 @@ function SalesContent() {
     setSelectedItemId("")
     setQuantity("")
     setPricePerBox("")
-    setPaymentCash(true)
-    setPaymentCredit(false)
+    setPaymentMode("cash")
     setCashAmount("")
     setCreditAmount("")
     setSelectedCustomerId("")
@@ -566,11 +562,11 @@ function SalesContent() {
     setCart(sale.items.map((item) => ({ ...item })))
     setSelectedCustomerId(sale.customerId || "")
     setDescription(sale.description || "")
-    setPaymentCash(!!sale.paymentMethod?.cash)
-    setPaymentCredit(!!sale.paymentMethod?.credit)
-    // Cash is always a number here: an empty cash field would make the auto-fill clear the credit amount
-    setCashAmount(sale.paymentMethod?.cash ? sale.paymentMethod.cashAmount || 0 : 0)
-    setCreditAmount(sale.paymentMethod?.credit ? sale.paymentMethod.creditAmount || 0 : "")
+    const savedCash = !!sale.paymentMethod?.cash
+    const savedCredit = !!sale.paymentMethod?.credit
+    setPaymentMode(savedCash && savedCredit ? "both" : savedCredit ? "credit" : "cash")
+    setCashAmount(savedCash ? sale.paymentMethod?.cashAmount || 0 : "")
+    setCreditAmount(savedCredit ? sale.paymentMethod?.creditAmount || 0 : "")
     setActiveView("record")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -1010,107 +1006,62 @@ function SalesContent() {
               {/* Payment Method Selection */}
               <div className="mb-6 p-4 bg-muted/30 rounded-lg border border-border">
                 <h3 className="text-sm font-semibold mb-3">💰 Payment Method</h3>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Cash is selected by default. Reduce cash amount to split with credit.
-                </p>
-                <div className="space-y-4">
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer mb-2">
-                    <input
-                      type="checkbox"
-                      checked={paymentCash}
-                        onChange={(e) => {
-                          setPaymentCash(e.target.checked)
-                          if (!e.target.checked) {
-                            setCashAmount("")
-                            // If unchecking cash, set credit to full amount
-                            if (grandTotal > 0) {
-                              setCreditAmount(grandTotal)
-                              setPaymentCredit(true)
-                            }
-                          } else {
-                            // If checking cash, set to full amount
-                            setCashAmount(grandTotal)
-                            setCreditAmount("")
-                            setPaymentCredit(false)
-                          }
-                        }}
-                        disabled={cart.length === 0}
-                      className="w-4 h-4"
-                    />
-                      <span className="text-sm font-medium">💵 Cash Payment</span>
-                  </label>
-                    {paymentCash && (
-                      <div>
-                        <Input
-                          type="number"
-                          min="0"
-                          max={grandTotal}
-                          step="0.01"
-                          placeholder="Enter cash amount"
-                          value={cashAmount === "" ? "" : cashAmount}
-                          onChange={(e) => setCashAmount(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
-                          className="mt-2 font-semibold"
-                        />
-                        {cashAmount !== "" && typeof cashAmount === 'number' && (
-                          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                            Cash: RS {(cashAmount || 0).toFixed(2)}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                <Select
+                  value={paymentMode}
+                  onValueChange={(value) => handlePaymentModeChange(value as "cash" | "credit" | "both")}
+                  disabled={cart.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">💵 Full Cash</SelectItem>
+                    <SelectItem value="credit">💳 Full Credit</SelectItem>
+                    <SelectItem value="both">🔀 Both (Cash + Credit)</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {cart.length > 0 && paymentMode === "cash" && (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-3">
+                    Cash: RS {(grandTotal || 0).toFixed(2)}
+                  </p>
+                )}
+                {cart.length > 0 && paymentMode === "credit" && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-3">
+                    Credit: RS {(grandTotal || 0).toFixed(2)}
+                  </p>
+                )}
+                {cart.length > 0 && paymentMode === "both" && (
+                  <div className="space-y-3 mt-4">
+                    <div>
+                      <label className="text-sm font-medium">💵 Cash Amount</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max={grandTotal}
+                        step="0.01"
+                        placeholder="Enter cash amount"
+                        value={cashAmount === "" ? "" : cashAmount}
+                        onChange={(e) => handleSplitCashChange(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                        className="mt-1 font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">💳 Credit Amount</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max={grandTotal}
+                        step="0.01"
+                        placeholder="Enter credit amount"
+                        value={creditAmount === "" ? "" : creditAmount}
+                        onChange={(e) => handleSplitCreditChange(e.target.value === "" ? "" : Number.parseFloat(e.target.value))}
+                        className="mt-1 font-semibold bg-blue-50 dark:bg-blue-950/20"
+                      />
+                    </div>
                   </div>
-                  
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer mb-2">
-                    <input
-                      type="checkbox"
-                      checked={paymentCredit}
-                        onChange={(e) => {
-                          setPaymentCredit(e.target.checked)
-                          if (!e.target.checked) setCreditAmount("")
-                        }}
-                        disabled={cart.length === 0}
-                      className="w-4 h-4"
-                    />
-                      <span className="text-sm font-medium">💳 Credit Payment</span>
-                      {creditAmount !== "" && typeof creditAmount === 'number' && creditAmount > 0 && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400 ml-2">
-                          (Auto-calculated)
-                    </span>
-                      )}
-                  </label>
-                    {paymentCredit && (
-                      <div>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Credit amount"
-                          value={creditAmount === "" ? "" : creditAmount}
-                          onChange={(e) => {
-                            const newCreditAmount = e.target.value === "" ? "" : Number.parseFloat(e.target.value)
-                            setCreditAmount(newCreditAmount)
-                            // Adjust cash amount accordingly
-                            if (newCreditAmount !== "" && typeof newCreditAmount === 'number') {
-                              const newCashAmount = grandTotal - newCreditAmount
-                              if (newCashAmount >= 0) {
-                                setCashAmount(newCashAmount)
-                              }
-                            }
-                          }}
-                          className="mt-2 font-semibold bg-blue-50 dark:bg-blue-950/20"
-                        />
-                        {creditAmount !== "" && typeof creditAmount === 'number' && (
-                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                            Credit: RS {(creditAmount || 0).toFixed(2)}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
+                )}
+
                 {cart.length === 0 && (
                   <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-3">
                     Add items to cart first
